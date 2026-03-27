@@ -1,8 +1,8 @@
-﻿export default function ChartPanel({ title, subtitle, data, accent = "teal" }) {
+export default function ChartPanel({ title, subtitle, data, accent = "amber" }) {
   const maxValue = Math.max(...data.values, 1);
 
   return (
-    <article className="panel chart-card">
+    <article className="panel chart-card cinematic-card">
       <div className="panel-head">
         <div>
           <h3>{title}</h3>

@@ -1,5 +1,5 @@
-﻿const tabs = [
-  { id: "home", label: "Home" },
+const tabs = [
+  { id: "home", label: "Dashboard" },
   { id: "devices", label: "Devices" },
   { id: "analytics", label: "Analytics" },
   { id: "settings", label: "Settings" },
@@ -11,8 +11,9 @@ export default function Navigation({ activeTab, onChange, onLogout, userName }) 
       <aside className="sidebar-nav panel">
         <div className="brand-block">
           <span className="section-tag">AI energy control</span>
+          <span className="brand-status-dot">Live grid</span>
           <h1>GridSense</h1>
-          <p>Real-time electricity monitoring with intelligent multi-floor automation.</p>
+          <p>Real-time electricity monitoring with cinematic multi-floor automation and animated live energy flow.</p>
         </div>
 
         <div className="nav-list">

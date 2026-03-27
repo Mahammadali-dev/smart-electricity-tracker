@@ -560,3 +560,180 @@
 .ai-suggestion-card .ghost-button {
   justify-self: start;
 }
+
+.command-layout .room-map-panel,
+.live-energy-panel,
+.floor-band-panel,
+.floor-tab-chip,
+.floor-room,
+.map-device {
+  transform: translateZ(0);
+  will-change: transform, box-shadow, border-color;
+}
+
+.cinematic-floor-band,
+.cinematic-blueprint-shell {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.006)), rgba(18, 18, 18, 0.9);
+}
+
+.blueprint-shell {
+  box-shadow: inset 0 0 0 1px rgba(255, 184, 0, 0.05), 0 22px 46px rgba(0, 0, 0, 0.24);
+}
+
+.blueprint-board::before {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+}
+
+.blueprint-board::after {
+  border-color: rgba(255, 184, 0, 0.10);
+}
+
+.floor-room {
+  box-shadow: inset 0 0 0 1px rgba(255, 184, 0, 0.06), inset 0 -20px 40px rgba(0, 0, 0, 0.16);
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.floor-room:hover {
+  transform: translate3d(0, -4px, 0);
+  box-shadow: inset 0 0 0 1px rgba(255, 184, 0, 0.08), 0 16px 30px rgba(0, 0, 0, 0.22), 0 0 28px rgba(255, 184, 0, 0.05);
+}
+
+.floor-room.selected {
+  border-color: rgba(255, 184, 0, 0.5);
+  box-shadow: 0 0 0 1px rgba(255, 184, 0, 0.20), 0 0 28px rgba(255, 184, 0, 0.10), inset 0 0 24px rgba(255, 184, 0, 0.06);
+}
+
+.floor-room-title {
+  background: linear-gradient(180deg, rgba(18, 18, 18, 0.92), rgba(30, 30, 30, 0.78));
+  border: 1px solid rgba(255, 184, 0, 0.08);
+}
+
+.map-device {
+  background: linear-gradient(180deg, rgba(18, 18, 18, 0.96), rgba(26, 26, 26, 0.9));
+  overflow: hidden;
+  isolation: isolate;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.map-device:hover {
+  transform: translate3d(-50%, -50%, 0) scale(1.04);
+}
+
+.map-device:active {
+  transform: translate3d(-50%, -50%, 0) scale(1.12);
+}
+
+.map-device.on {
+  border-color: rgba(255, 184, 0, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(255, 184, 0, 0.18), 0 0 22px rgba(255, 184, 0, 0.14);
+}
+
+.map-device.high {
+  box-shadow: 0 0 0 1px rgba(255, 184, 0, 0.14), 0 0 26px rgba(255, 184, 0, 0.10);
+}
+
+.map-device-aura {
+  position: absolute;
+  inset: -12px;
+  border-radius: inherit;
+  opacity: 0;
+  background: radial-gradient(circle, rgba(255, 184, 0, 0.22), rgba(255, 184, 0, 0.04) 56%, transparent 74%);
+  z-index: -1;
+  transition: opacity 0.25s ease;
+}
+
+.map-device.on .map-device-aura {
+  opacity: 1;
+  animation: devicePulse 2.4s ease-in-out infinite;
+}
+
+.device-energy-flow {
+  position: absolute;
+  inset: 8px 14px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+.device-energy-flow span {
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, transparent 0%, rgba(255, 184, 0, 0.12) 24%, rgba(255, 184, 0, 0.94) 52%, transparent 100%);
+  animation: energyFlow 1.4s linear infinite;
+  box-shadow: 0 0 14px rgba(255, 184, 0, 0.22);
+}
+
+.device-energy-flow span:nth-child(2) {
+  animation-delay: -0.45s;
+}
+
+.device-energy-flow span:nth-child(3) {
+  animation-delay: -0.9s;
+}
+
+.map-device-icon,
+.map-device strong,
+.map-device .device-watts,
+.map-device .device-state {
+  position: relative;
+  z-index: 1;
+}
+
+.map-device.on .map-device-icon {
+  color: #FFD97A;
+  filter: drop-shadow(0 0 8px rgba(255, 184, 0, 0.35));
+}
+
+.device-state.on {
+  color: #FFD97A;
+}
+
+.floor-tab-chip.active,
+.floor-tab-chip:hover {
+  box-shadow: 0 0 0 1px rgba(255, 184, 0, 0.16), 0 14px 30px rgba(255, 184, 0, 0.08);
+}
+
+@keyframes energyFlow {
+  0% {
+    transform: translateY(125%);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0.62;
+  }
+  100% {
+    transform: translateY(-125%);
+    opacity: 0;
+  }
+}
+
+@keyframes devicePulse {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .map-device:hover {
+    transform: translate3d(-50%, -50%, 0) scale(1.02);
+  }
+
+  .map-device:active {
+    transform: translate3d(-50%, -50%, 0) scale(1.14);
+  }
+}
