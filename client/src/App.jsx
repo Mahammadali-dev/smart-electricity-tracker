@@ -11,6 +11,7 @@ import SetupPage from "./pages/SetupPage";
 export default function App() {
   const [session, setSession] = useState(() => loadSession());
   const [booting, setBooting] = useState(Boolean(loadSession()?.token));
+  const persistedSetupCompleted = Boolean(loadSession()?.setupCompleted);
 
   useEffect(() => {
     let ignore = false;
@@ -116,7 +117,8 @@ export default function App() {
     );
   }
 
-  const defaultProtectedPath = session?.token ? (session.setupCompleted ? "/dashboard" : "/setup") : "/login";
+  const hasCompletedSetup = Boolean(session?.setupCompleted || persistedSetupCompleted);
+  const defaultProtectedPath = session?.token ? (hasCompletedSetup ? "/dashboard" : "/setup") : "/login";
 
   return (
     <Routes>
@@ -145,7 +147,7 @@ export default function App() {
         path="/dashboard"
         element={
           <ProtectedRoute isAuthenticated={Boolean(session?.token)}>
-            {session?.setupCompleted ? (
+            {hasCompletedSetup ? (
               <DashboardPage session={session} onLogout={handleLogout} onSettingsChange={handleSettingsChange} />
             ) : (
               <Navigate to="/setup" replace />

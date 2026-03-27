@@ -439,7 +439,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       setDailyHistory(finalHistory);
       await api.saveLayout(session.token, { rooms: serializeRooms(rooms), appliances: serializeAppliances(devices), metrics: finalMetrics, dailyHistory: finalHistory, settings: { dailyLimit, darkMode: theme === "dark" }, setupCompleted: true });
       onSetupComplete({ settings: { dailyLimit, darkMode: theme === "dark" } });
-      navigate("/dashboard");
+      navigate("/dashboard", { replace: true });
     } catch (saveError) {
       setError(saveError.message || "Unable to save layout.");
     } finally {
