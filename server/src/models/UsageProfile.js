@@ -1,8 +1,17 @@
 import mongoose from "mongoose";
 
+const floorSchema = new mongoose.Schema(
+  {
+    id: String,
+    name: String,
+  },
+  { _id: false }
+);
+
 const roomSchema = new mongoose.Schema(
   {
     id: String,
+    floorId: String,
     type: String,
     name: String,
     x: Number,
@@ -17,6 +26,7 @@ const roomSchema = new mongoose.Schema(
 const applianceSchema = new mongoose.Schema(
   {
     deviceId: String,
+    floorId: String,
     roomId: String,
     room: String,
     name: String,
@@ -75,6 +85,14 @@ const usageProfileSchema = new mongoose.Schema(
     setupCompleted: {
       type: Boolean,
       default: false,
+    },
+    floors: {
+      type: [floorSchema],
+      default: [
+        { id: "floor-1", name: "Floor 1" },
+        { id: "floor-2", name: "Floor 2" },
+        { id: "floor-3", name: "Floor 3" },
+      ],
     },
     rooms: {
       type: [roomSchema],

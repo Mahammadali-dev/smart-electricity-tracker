@@ -475,3 +475,80 @@
     padding: 18px;
   }
 }
+
+.floor-selector-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.floor-tab-chip {
+  min-height: 78px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.floor-tab-chip:hover {
+  transform: translateY(-1px);
+}
+
+.floor-tab-chip.active {
+  border-color: rgba(20, 184, 166, 0.46);
+  background: rgba(20, 184, 166, 0.12);
+  box-shadow: 0 0 22px rgba(20, 184, 166, 0.14);
+}
+
+.floor-tab-chip span,
+.floor-tab-chip small {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floor-band-panel,
+.setup-floor-stats,
+.floor-usage-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.floor-band-panel {
+  margin-bottom: 18px;
+}
+
+.setup-floor-stats,
+.floor-usage-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.dashboard-floor-shell {
+  min-height: 520px;
+}
+
+.blueprint-board.builder,
+.blueprint-board.readonly,
+.floor-room,
+.map-device,
+.floor-tab-chip {
+  transition: transform 0.18s ease, opacity 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.floor-band-panel .panel-head {
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .floor-selector-row,
+  .setup-floor-stats,
+  .floor-usage-grid {
+    grid-template-columns: 1fr;
+  }
+}

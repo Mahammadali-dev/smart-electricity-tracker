@@ -575,6 +575,11 @@ body.theme-light .limit-bar {
   background: rgba(255, 115, 99, 0.09);
 }
 
+.metric-card.success {
+  border-color: rgba(20, 184, 166, 0.3);
+  background: rgba(20, 184, 166, 0.1);
+}
+
 .metric-card span,
 .metric-card small,
 .room-card p,

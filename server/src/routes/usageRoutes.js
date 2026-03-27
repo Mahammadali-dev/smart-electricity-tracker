@@ -3,9 +3,34 @@ import { authenticateToken } from "../middleware/auth.js";
 import { UsageProfile } from "../models/UsageProfile.js";
 
 const router = express.Router();
+const DEFAULT_FLOORS = [
+  { id: "floor-1", name: "Floor 1" },
+  { id: "floor-2", name: "Floor 2" },
+  { id: "floor-3", name: "Floor 3" },
+];
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function ensureFloorId(value) {
+  return String(value || "floor-1").trim().toLowerCase() || "floor-1";
+}
+
+function sanitizeFloors(floors = []) {
+  const merged = Object.fromEntries(DEFAULT_FLOORS.map((floor) => [floor.id, { ...floor }]));
+  floors.forEach((floor) => {
+    const floorId = ensureFloorId(floor?.id);
+    merged[floorId] = {
+      id: floorId,
+      name: String(floor?.name || merged[floorId]?.name || `Floor ${floorId.replace(/[^0-9]/g, "") || 1}`).trim() || merged[floorId]?.name || "Floor 1",
+    };
+  });
+  return Object.values(merged).sort((left, right) => {
+    const leftNumber = Number(left.id.replace(/[^0-9]/g, "")) || 0;
+    const rightNumber = Number(right.id.replace(/[^0-9]/g, "")) || 0;
+    return leftNumber - rightNumber;
+  });
 }
 
 function sanitizeRooms(rooms = []) {
@@ -15,6 +40,7 @@ function sanitizeRooms(rooms = []) {
       const height = Number(item.height ?? item.h) || 0;
       return {
         id: String(item.id || ""),
+        floorId: ensureFloorId(item.floorId),
         type: String(item.type || "custom"),
         name: String(item.name || "Room").trim() || "Room",
         x: Math.max(0, Number(item.x) || 0),
@@ -31,6 +57,7 @@ function sanitizeAppliances(appliances = []) {
   return appliances
     .map((item) => ({
       deviceId: String(item.deviceId || ""),
+      floorId: ensureFloorId(item.floorId),
       roomId: String(item.roomId || ""),
       room: String(item.room || ""),
       name: String(item.name || "Device").trim() || "Device",
@@ -81,6 +108,7 @@ function sanitizeSettings(settings = {}) {
 function defaultPayload() {
   return {
     setupCompleted: false,
+    floors: DEFAULT_FLOORS,
     rooms: [],
     latestMetrics: {
       liveLoadKw: 0,
@@ -106,16 +134,20 @@ function defaultPayload() {
 
 router.post("/save-usage", authenticateToken, async (req, res) => {
   try {
+    const rooms = sanitizeRooms(req.body.rooms);
+    const appliances = sanitizeAppliances(req.body.appliances);
+
     const profile = await UsageProfile.findOneAndUpdate(
       { user: req.user.id },
       {
         $set: {
+          floors: sanitizeFloors(req.body.floors),
           latestMetrics: sanitizeMetrics(req.body.metrics),
-          appliances: sanitizeAppliances(req.body.appliances),
-          rooms: sanitizeRooms(req.body.rooms),
+          appliances,
+          rooms,
           dailyHistory: sanitizeHistory(req.body.dailyHistory),
           settings: sanitizeSettings(req.body.settings),
-          setupCompleted: Boolean(req.body.setupCompleted) || sanitizeRooms(req.body.rooms).length > 0,
+          setupCompleted: Boolean(req.body.setupCompleted) || rooms.length > 0,
         },
       },
       {
@@ -151,6 +183,7 @@ router.post("/save-layout", authenticateToken, async (req, res) => {
       { user: req.user.id },
       {
         $set: {
+          floors: sanitizeFloors(req.body.floors),
           rooms,
           appliances,
           latestMetrics: sanitizeMetrics(req.body.metrics),
@@ -169,6 +202,7 @@ router.post("/save-layout", authenticateToken, async (req, res) => {
     return res.json({
       message: "Layout saved successfully.",
       layout: {
+        floors: profile.floors,
         rooms: profile.rooms,
         devices: profile.appliances,
         appliances: profile.appliances,
@@ -186,6 +220,7 @@ router.get("/get-layout", authenticateToken, async (req, res) => {
   try {
     const profile = await UsageProfile.findOne({ user: req.user.id });
     return res.json({
+      floors: profile?.floors || DEFAULT_FLOORS,
       rooms: profile?.rooms || [],
       devices: profile?.appliances || [],
       appliances: profile?.appliances || [],

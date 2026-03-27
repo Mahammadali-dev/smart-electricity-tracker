@@ -2,6 +2,12 @@ export const BOARD_WIDTH = 480;
 export const BOARD_HEIGHT = 400;
 export const MIN_ROOM_SIZE = 80;
 
+export const FLOOR_LIBRARY = [
+  { id: "floor-1", name: "Floor 1" },
+  { id: "floor-2", name: "Floor 2" },
+  { id: "floor-3", name: "Floor 3" },
+];
+
 export const ROOM_LIBRARY = [
   { key: "living", label: "Living Room", threshold: 2200 },
   { key: "bedroom", label: "Bedroom", threshold: 1800 },
@@ -44,19 +50,19 @@ const FALLBACK_LAYOUT_SLOTS = [
 ];
 
 const applianceBlueprints = [
-  { room: "Living Room", name: "Fan", type: "fan", watts: 75, dailyHours: 8.2, on: true },
-  { room: "Living Room", name: "AC", type: "ac", watts: 1450, dailyHours: 4.5, on: true },
-  { room: "Living Room", name: "Light", type: "light", watts: 90, dailyHours: 6.5, on: true },
-  { room: "Living Room", name: "TV", type: "tv", watts: 180, dailyHours: 5.2, on: true },
-  { room: "Living Room", name: "Refrigerator", type: "fridge", watts: 220, dailyHours: 18.5, on: true },
-  { room: "Bedroom", name: "Fan", type: "fan", watts: 60, dailyHours: 9.0, on: true },
-  { room: "Bedroom", name: "AC", type: "ac", watts: 1300, dailyHours: 3.6, on: false },
-  { room: "Bedroom", name: "Light", type: "light", watts: 60, dailyHours: 5.0, on: true },
-  { room: "Kitchen", name: "Fan", type: "fan", watts: 55, dailyHours: 6.2, on: true },
-  { room: "Kitchen", name: "Light", type: "light", watts: 80, dailyHours: 7.0, on: true },
-  { room: "Kitchen", name: "Refrigerator", type: "fridge", watts: 260, dailyHours: 22.0, on: true },
-  { room: "Bathroom", name: "Light", type: "light", watts: 50, dailyHours: 3.3, on: true },
-  { room: "Bathroom", name: "Water Heater", type: "water-heater", watts: 1800, dailyHours: 1.2, on: false },
+  { floorId: "floor-1", room: "Living Room", name: "Fan", type: "fan", watts: 75, dailyHours: 8.2, on: true },
+  { floorId: "floor-1", room: "Living Room", name: "AC", type: "ac", watts: 1450, dailyHours: 4.5, on: true },
+  { floorId: "floor-1", room: "Living Room", name: "Light", type: "light", watts: 90, dailyHours: 6.5, on: true },
+  { floorId: "floor-1", room: "Living Room", name: "TV", type: "tv", watts: 180, dailyHours: 5.2, on: true },
+  { floorId: "floor-1", room: "Living Room", name: "Refrigerator", type: "fridge", watts: 220, dailyHours: 18.5, on: true },
+  { floorId: "floor-1", room: "Bedroom", name: "Fan", type: "fan", watts: 60, dailyHours: 9.0, on: true },
+  { floorId: "floor-1", room: "Bedroom", name: "AC", type: "ac", watts: 1300, dailyHours: 3.6, on: false },
+  { floorId: "floor-1", room: "Bedroom", name: "Light", type: "light", watts: 60, dailyHours: 5.0, on: true },
+  { floorId: "floor-1", room: "Kitchen", name: "Fan", type: "fan", watts: 55, dailyHours: 6.2, on: true },
+  { floorId: "floor-1", room: "Kitchen", name: "Light", type: "light", watts: 80, dailyHours: 7.0, on: true },
+  { floorId: "floor-1", room: "Kitchen", name: "Refrigerator", type: "fridge", watts: 260, dailyHours: 22.0, on: true },
+  { floorId: "floor-1", room: "Bathroom", name: "Light", type: "light", watts: 50, dailyHours: 3.3, on: true },
+  { floorId: "floor-1", room: "Bathroom", name: "Water Heater", type: "water-heater", watts: 1800, dailyHours: 1.2, on: false },
 ];
 
 export function clamp(value, min, max) {
@@ -72,6 +78,27 @@ function slugify(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+function sortFloorIds(left, right) {
+  const leftNumber = Number(String(left).replace(/[^0-9]/g, "")) || 0;
+  const rightNumber = Number(String(right).replace(/[^0-9]/g, "")) || 0;
+  return leftNumber - rightNumber;
+}
+
+function defaultFloorName(floorId) {
+  const known = FLOOR_LIBRARY.find((floor) => floor.id === floorId);
+  if (known) {
+    return known.name;
+  }
+
+  const number = Number(String(floorId).replace(/[^0-9]/g, "")) || 1;
+  return `Floor ${number}`;
+}
+
+function ensureFloorId(value) {
+  const next = String(value || "floor-1").trim() || "floor-1";
+  return next.toLowerCase();
 }
 
 function resolveRoomType(roomOrType) {
@@ -98,6 +125,61 @@ function roomThreshold(type) {
 
 function defaultRoomName(type) {
   return ROOM_LIBRARY.find((room) => room.key === type)?.label || "Custom Room";
+}
+
+export function createDefaultFloors() {
+  return FLOOR_LIBRARY.map((floor) => ({ ...floor }));
+}
+
+export function normalizeFloors(savedFloors, savedRooms = [], savedAppliances = []) {
+  const floors = Object.fromEntries(createDefaultFloors().map((floor) => [floor.id, floor]));
+
+  (savedFloors || []).forEach((floor) => {
+    const floorId = ensureFloorId(floor?.id);
+    floors[floorId] = {
+      id: floorId,
+      name: String(floor?.name || defaultFloorName(floorId)).trim() || defaultFloorName(floorId),
+    };
+  });
+
+  [...(savedRooms || []), ...(savedAppliances || [])].forEach((item) => {
+    const floorId = ensureFloorId(item?.floorId);
+    if (!floors[floorId]) {
+      floors[floorId] = { id: floorId, name: defaultFloorName(floorId) };
+    }
+  });
+
+  return Object.values(floors).sort((left, right) => sortFloorIds(left.id, right.id));
+}
+
+export function serializeFloors(floors) {
+  return (floors || []).map((floor) => ({
+    id: ensureFloorId(floor.id),
+    name: String(floor.name || defaultFloorName(floor.id)).trim() || defaultFloorName(floor.id),
+  }));
+}
+
+export function getFloorById(floors, floorId) {
+  return (floors || []).find((floor) => floor.id === floorId) || floors?.[0] || null;
+}
+
+export function getPreferredFloorId(floors, rooms, appliances) {
+  const sortedFloors = normalizeFloors(floors, rooms, appliances);
+  const populated = sortedFloors.find((floor) =>
+    (rooms || []).some((room) => ensureFloorId(room.floorId) === floor.id) ||
+    (appliances || []).some((device) => ensureFloorId(device.floorId) === floor.id)
+  );
+  return populated?.id || sortedFloors[0]?.id || "floor-1";
+}
+
+export function filterRoomsByFloor(rooms, floorId) {
+  const nextFloorId = ensureFloorId(floorId);
+  return (rooms || []).filter((room) => ensureFloorId(room.floorId) === nextFloorId);
+}
+
+export function filterDevicesByFloor(appliances, floorId) {
+  const nextFloorId = ensureFloorId(floorId);
+  return (appliances || []).filter((device) => ensureFloorId(device.floorId) === nextFloorId);
 }
 
 export function getAllowedDeviceTypes(roomOrType) {
@@ -168,6 +250,7 @@ function upgradeLegacyRoomDevice(room, item) {
 
 export function createRoom(payload = {}) {
   const type = resolveRoomType(payload.type || payload.name || "custom");
+  const floorId = ensureFloorId(payload.floorId);
   const legacyWidth = payload.width == null && payload.w != null ? Number(payload.w) * 40 : null;
   const legacyHeight = payload.height == null && payload.h != null ? Number(payload.h) * 40 : null;
   const width = clamp(Number(payload.width ?? legacyWidth ?? 160) || 160, MIN_ROOM_SIZE, BOARD_WIDTH);
@@ -176,7 +259,8 @@ export function createRoom(payload = {}) {
   const y = clamp(Number(payload.y) || 0, 0, Math.max(0, BOARD_HEIGHT - height));
 
   return {
-    id: String(payload.id || `${slugify(payload.name || defaultRoomName(type))}-${Math.random().toString(36).slice(2, 8)}`),
+    id: String(payload.id || `${floorId}-${slugify(payload.name || defaultRoomName(type))}-${Math.random().toString(36).slice(2, 8)}`),
+    floorId,
     type,
     name: String(payload.name || defaultRoomName(type)).trim() || defaultRoomName(type),
     x,
@@ -187,8 +271,12 @@ export function createRoom(payload = {}) {
   };
 }
 
-export function createDefaultRooms() {
-  return DEFAULT_ROOM_LAYOUT.map((item) => createRoom(item));
+export function createDefaultRooms(floorId = "floor-1") {
+  const nextFloorId = ensureFloorId(floorId);
+  if (nextFloorId !== "floor-1") {
+    return [];
+  }
+  return DEFAULT_ROOM_LAYOUT.map((item) => createRoom({ ...item, floorId: nextFloorId }));
 }
 
 function createRoomsFromLegacyAppliances(savedAppliances) {
@@ -199,6 +287,7 @@ function createRoomsFromLegacyAppliances(savedAppliances) {
     const type = known ? known.type : "custom";
     return createRoom({
       id: `legacy-${slugify(name)}`,
+      floorId: ensureFloorId(savedAppliances?.[0]?.floorId),
       type,
       name,
       x: slot.x,
@@ -226,7 +315,8 @@ export function renameRoom(rooms, roomId, nextName) {
     return rooms;
   }
   const trimmed = String(nextName || "").trim();
-  const name = uniqueRoomName(trimmed || room.name, rooms, roomId);
+  const sameFloorRooms = rooms.filter((item) => item.floorId === room.floorId);
+  const name = uniqueRoomName(trimmed || room.name, sameFloorRooms, roomId);
   return rooms.map((item) => (item.id === roomId ? { ...item, name } : item));
 }
 
@@ -237,7 +327,8 @@ export function createDevice(payload = {}, indexInRoom = 0) {
     : defaultDevicePlacement(payload.type || template.type, indexInRoom);
 
   return {
-    deviceId: String(payload.deviceId || `${payload.roomId || "room"}-${template.type}-${Math.random().toString(36).slice(2, 8)}`),
+    deviceId: String(payload.deviceId || `${payload.roomId || ensureFloorId(payload.floorId)}-${template.type}-${Math.random().toString(36).slice(2, 8)}`),
+    floorId: ensureFloorId(payload.floorId),
     roomId: String(payload.roomId || ""),
     room: String(payload.room || ""),
     name: String(payload.name || template.name),
@@ -252,19 +343,21 @@ export function createDevice(payload = {}, indexInRoom = 0) {
 }
 
 export function createDefaultAppliances(roomList = createDefaultRooms()) {
-  const roomMap = Object.fromEntries(roomList.map((room) => [room.name, room]));
+  const roomMap = Object.fromEntries(roomList.map((room) => [`${ensureFloorId(room.floorId)}::${room.name}`, room]));
   const roomCounts = {};
 
   return applianceBlueprints
     .map((item) => {
-      const room = roomMap[item.room];
+      const key = `${ensureFloorId(item.floorId)}::${item.room}`;
+      const room = roomMap[key];
       if (!room || !isDeviceAllowedInRoom(room, item.type)) {
         return null;
       }
       roomCounts[room.id] = roomCounts[room.id] || 0;
       const device = createDevice(
         {
-          deviceId: `${slugify(item.room)}-${slugify(item.name)}`,
+          deviceId: `${ensureFloorId(item.floorId)}-${slugify(item.room)}-${slugify(item.name)}`,
+          floorId: room.floorId,
           roomId: room.id,
           room: room.name,
           name: item.name,
@@ -289,12 +382,18 @@ export function mergeSavedAppliances(savedAppliances, roomList, options = {}) {
   }
 
   const roomById = Object.fromEntries(roomList.map((room) => [room.id, room]));
-  const roomByName = Object.fromEntries(roomList.map((room) => [room.name.toLowerCase(), room]));
+  const roomByName = Object.fromEntries(roomList.map((room) => [`${ensureFloorId(room.floorId)}::${room.name.toLowerCase()}`, room]));
   const roomCounts = {};
 
   const normalized = savedAppliances
     .map((item) => {
-      const matchedRoom = roomById[item.roomId] || roomByName[String(item.room || "").toLowerCase()] || roomList[0] || null;
+      const preferredFloorId = ensureFloorId(item.floorId);
+      const matchedRoom =
+        roomById[item.roomId] ||
+        roomByName[`${preferredFloorId}::${String(item.room || "").toLowerCase()}`] ||
+        roomByName[`floor-1::${String(item.room || "").toLowerCase()}`] ||
+        roomList[0] ||
+        null;
       const upgradedItem = matchedRoom ? upgradeLegacyRoomDevice(matchedRoom, item) : item;
       if (matchedRoom && !isDeviceAllowedInRoom(matchedRoom, upgradedItem.type)) {
         return null;
@@ -305,6 +404,7 @@ export function mergeSavedAppliances(savedAppliances, roomList, options = {}) {
       const device = createDevice(
         {
           deviceId: upgradedItem.deviceId,
+          floorId: matchedRoom ? matchedRoom.floorId : preferredFloorId,
           roomId: matchedRoom ? matchedRoom.id : String(upgradedItem.roomId || ""),
           room: matchedRoom ? matchedRoom.name : String(upgradedItem.room || ""),
           name: upgradedItem.name,
@@ -338,7 +438,31 @@ export function calculateRoomStats(rooms, appliances) {
       activeWatts,
       activeLoadKw: toTwoDecimals(activeWatts / 1000),
       activeCount: devices.filter((item) => item.on).length,
+      estimatedDailyKwh: toOneDecimal(devices.reduce((sum, item) => sum + (item.watts * item.dailyHours) / 1000, 0)),
       overloaded: activeWatts > Number(room.threshold || roomThreshold(room.type)),
+    };
+  });
+}
+
+export function calculateFloorStats(floors, rooms, appliances) {
+  return normalizeFloors(floors, rooms, appliances).map((floor) => {
+    const floorRooms = filterRoomsByFloor(rooms, floor.id);
+    const floorDevices = filterDevicesByFloor(appliances, floor.id);
+    const roomStats = calculateRoomStats(floorRooms, floorDevices);
+    const activeWatts = floorDevices.filter((device) => device.on).reduce((sum, device) => sum + device.watts, 0);
+    const estimatedDailyKwh = floorDevices.reduce((sum, device) => sum + (device.watts * device.dailyHours) / 1000, 0);
+
+    return {
+      ...floor,
+      rooms: floorRooms,
+      devices: floorDevices,
+      roomCount: floorRooms.length,
+      deviceCount: floorDevices.length,
+      activeCount: floorDevices.filter((device) => device.on).length,
+      activeWatts,
+      activeLoadKw: toTwoDecimals(activeWatts / 1000),
+      estimatedDailyKwh: toOneDecimal(estimatedDailyKwh),
+      overloadedCount: roomStats.filter((room) => room.overloaded).length,
     };
   });
 }
@@ -437,14 +561,15 @@ export function buildTrendSeries(range, metrics, history) {
   return { labels, values };
 }
 
-export function buildDeviceComparison(appliances, rooms) {
+export function buildDeviceComparison(appliances, rooms, floors) {
   const roomMap = Object.fromEntries((rooms || []).map((room) => [room.id, room.name]));
+  const floorMap = Object.fromEntries(normalizeFloors(floors, rooms, appliances).map((floor) => [floor.id, floor.name]));
   return appliances
     .slice()
     .sort((left, right) => right.watts - left.watts)
     .slice(0, 6)
     .map((item) => ({
-      label: `${roomMap[item.roomId] || item.room || "Room"} ${item.name}`,
+      label: `${floorMap[ensureFloorId(item.floorId)] || defaultFloorName(item.floorId)} ${roomMap[item.roomId] || item.room || "Room"} ${item.name}`,
       watts: item.watts,
       on: item.on,
     }));
@@ -488,7 +613,7 @@ export function buildAlerts(metrics, roomStats, dailyLimit) {
     alerts.push({
       tone: "danger",
       title: "Overload warning",
-      detail: `${overloadedRooms.map((room) => room.name).join(", ")} has high appliance demand and needs attention.`,
+      detail: `${overloadedRooms.map((room) => `${defaultFloorName(room.floorId)} ${room.name}`).join(", ")} has high appliance demand and needs attention.`,
     });
   }
 
@@ -538,6 +663,7 @@ export function deviceStyle(device) {
 export function serializeAppliances(appliances) {
   return appliances.map((item) => ({
     deviceId: item.deviceId,
+    floorId: ensureFloorId(item.floorId),
     roomId: item.roomId,
     room: item.room,
     name: item.name,
@@ -554,6 +680,7 @@ export function serializeAppliances(appliances) {
 export function serializeRooms(rooms) {
   return rooms.map((item) => ({
     id: item.id,
+    floorId: ensureFloorId(item.floorId),
     type: item.type,
     name: item.name,
     x: item.x,

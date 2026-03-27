@@ -6,9 +6,15 @@ import MetricCard from "../components/MetricCard";
 import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
+  createDefaultFloors,
+  filterDevicesByFloor,
+  filterRoomsByFloor,
   getAllowedDeviceLibrary,
+  getFloorById,
+  getPreferredFloorId,
   MIN_ROOM_SIZE,
   ROOM_LIBRARY,
+  calculateFloorStats,
   calculateRoomStats,
   canPlaceRoom,
   clamp,
@@ -19,9 +25,11 @@ import {
   deviceStyle,
   getRoomById,
   mergeSavedAppliances,
+  normalizeFloors,
   normalizeRooms,
   roomStyle,
   serializeAppliances,
+  serializeFloors,
   serializeRooms,
   snapToGrid,
   syncTodayHistory,
@@ -31,10 +39,10 @@ function formatCurrency(value) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value || 0);
 }
 
-function getStepNote(step) {
-  if (step === 1) return "Select a room type, then drag across the grid to draw a clean top-view layout.";
-  if (step === 2) return "Click a device to add it, then drag it inside the selected room.";
-  return "Review the saved floor plan and commit the setup.";
+function getStepNote(step, floorName) {
+  if (step === 1) return `Select a room type, then drag across the grid to draw ${floorName}.`;
+  if (step === 2) return `Add devices to ${floorName}, then drag them inside the selected room.`;
+  return "Review the full multi-floor smart home layout and save it to the dashboard.";
 }
 
 function ensureUniqueRoomName(baseName, rooms, ignoreId) {
@@ -70,6 +78,8 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const [gridSize, setGridSize] = useState(20);
   const [roomType, setRoomType] = useState("living");
   const [customRoomName, setCustomRoomName] = useState("Study");
+  const [floors, setFloors] = useState(() => createDefaultFloors());
+  const [activeFloorId, setActiveFloorId] = useState("floor-1");
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState(null);
@@ -84,47 +94,64 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const rafRef = useRef(0);
   const interactionRef = useRef(null);
   const pendingPointRef = useRef(null);
-  const roomsRef = useRef(rooms);
-  const devicesRef = useRef(devices);
+  const roomsRef = useRef([]);
+  const devicesRef = useRef([]);
   const gridSizeRef = useRef(gridSize);
   const roomTypeRef = useRef(roomType);
   const customRoomNameRef = useRef(customRoomName);
+  const activeFloorRef = useRef(activeFloorId);
 
-  const roomStats = useMemo(() => calculateRoomStats(rooms, devices), [rooms, devices]);
+  const activeRooms = useMemo(() => filterRoomsByFloor(rooms, activeFloorId), [rooms, activeFloorId]);
+  const activeDevices = useMemo(() => filterDevicesByFloor(devices, activeFloorId), [devices, activeFloorId]);
+  const roomStats = useMemo(() => calculateRoomStats(activeRooms, activeDevices), [activeRooms, activeDevices]);
+  const floorStats = useMemo(() => calculateFloorStats(floors, rooms, devices), [floors, rooms, devices]);
+  const activeFloor = useMemo(() => getFloorById(floors, activeFloorId) || floorStats[0] || null, [floors, activeFloorId, floorStats]);
+  const activeFloorData = useMemo(() => floorStats.find((floor) => floor.id === activeFloorId) || floorStats[0] || null, [floorStats, activeFloorId]);
   const selectedRoom = useMemo(() => getRoomById(roomStats, selectedRoomId), [roomStats, selectedRoomId]);
 
-  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
-  useEffect(() => { devicesRef.current = devices; }, [devices]);
+  useEffect(() => { roomsRef.current = activeRooms; }, [activeRooms]);
+  useEffect(() => { devicesRef.current = activeDevices; }, [activeDevices]);
   useEffect(() => { gridSizeRef.current = gridSize; }, [gridSize]);
   useEffect(() => { roomTypeRef.current = roomType; }, [roomType]);
   useEffect(() => { customRoomNameRef.current = customRoomName; }, [customRoomName]);
+  useEffect(() => { activeFloorRef.current = activeFloorId; }, [activeFloorId]);
 
   useEffect(() => {
     let ignore = false;
+
     async function loadLayout() {
       try {
         const data = await api.getLayout(session.token);
         if (ignore) return;
         const nextRooms = normalizeRooms(data.rooms, data.appliances || data.devices);
-        const nextDevices = mergeSavedAppliances(data.appliances || data.devices, nextRooms, { preferDefaultsWhenMissing: Boolean(data.setupCompleted) });
-        const nextMetrics = data.metrics?.todayUsage ? data.metrics : computeMetrics(nextDevices, null, data.settings?.dailyLimit || initialLimit);
+        const nextDevices = mergeSavedAppliances(data.appliances || data.devices, nextRooms, {
+          preferDefaultsWhenMissing: Boolean(data.setupCompleted),
+        });
+        const nextFloors = normalizeFloors(data.floors, nextRooms, nextDevices);
+        const nextLimit = data.settings?.dailyLimit || initialLimit;
+        const nextMetrics = data.metrics?.todayUsage ? data.metrics : computeMetrics(nextDevices, null, nextLimit);
         const nextHistory = data.dailyHistory?.length ? data.dailyHistory.slice(-14) : createInitialHistory(nextMetrics.todayUsage);
+        const nextFloorId = getPreferredFloorId(nextFloors, nextRooms, nextDevices);
+
+        setFloors(nextFloors);
         setRooms(nextRooms);
         setDevices(nextDevices);
         setMetrics(nextMetrics);
         setDailyHistory(syncTodayHistory(nextHistory, nextMetrics.todayUsage));
-        setDailyLimit(data.settings?.dailyLimit || initialLimit);
+        setDailyLimit(nextLimit);
         setTheme(data.settings?.darkMode === false ? "light" : "dark");
-        setSelectedRoomId(nextRooms[0]?.id || null);
+        setActiveFloorId(nextFloorId);
+        setSelectedRoomId(nextRooms.find((room) => room.floorId === nextFloorId)?.id || null);
       } catch (loadError) {
         if (!ignore) setError(loadError.message);
       } finally {
         if (!ignore) setLoading(false);
       }
     }
+
     loadLayout();
     return () => { ignore = true; };
-  }, [session.token]);
+  }, [session.token, initialLimit]);
 
   useEffect(() => {
     document.body.classList.toggle("theme-dark", theme === "dark");
@@ -142,9 +169,22 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   }, [devices, dailyLimit, loading]);
 
   useEffect(() => {
-    if (!rooms.length) { setSelectedRoomId(null); return; }
-    if (!selectedRoomId || !rooms.some((room) => room.id === selectedRoomId)) setSelectedRoomId(rooms[0].id);
-  }, [rooms, selectedRoomId]);
+    if (!activeRooms.length) {
+      setSelectedRoomId(null);
+      return;
+    }
+    if (!selectedRoomId || !activeRooms.some((room) => room.id === selectedRoomId)) {
+      setSelectedRoomId(activeRooms[0].id);
+    }
+  }, [activeRooms, selectedRoomId]);
+
+  useEffect(() => {
+    if (previewRef.current) {
+      previewRef.current.style.display = "none";
+      previewRef.current.classList.remove("invalid");
+    }
+    if (badgeRef.current) badgeRef.current.style.display = "none";
+  }, [activeFloorId, step]);
 
   function clearTransient() {
     if (previewRef.current) {
@@ -207,7 +247,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       const valid = canPlaceRoom(candidate, roomsRef.current, null);
       interaction.candidate = candidate;
       interaction.valid = valid;
-      showTransient(candidate, point, `${candidate.width}px x ${candidate.height}px`, valid ? "Release to create room" : "Room overlaps another room", valid);
+      showTransient(candidate, point, `${candidate.width}px x ${candidate.height}px`, valid ? `Release to create room on ${activeFloor?.name || "this floor"}` : "Room overlaps another room", valid);
       return;
     }
 
@@ -224,9 +264,10 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       interaction.candidate = candidate;
       interaction.valid = valid;
       updateRoomPreview(interaction.roomId, candidate, valid);
-      showTransient(candidate, point, `${candidate.width}px x ${candidate.height}px`, valid ? "Drag to reposition room" : "Placement blocked", valid);
+      showTransient(candidate, point, `${candidate.width}px x ${candidate.height}px`, valid ? `Drag within ${activeFloor?.name || "the floor"}` : "Placement blocked", valid);
       return;
     }
+
     if (interaction.type === "resize") {
       const size = gridSizeRef.current;
       const right = interaction.origin.x + interaction.origin.width;
@@ -238,8 +279,14 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
 
       if (interaction.corner.includes("e")) width = clamp(snapToGrid(point.x - interaction.origin.x, size), MIN_ROOM_SIZE, BOARD_WIDTH - interaction.origin.x);
       if (interaction.corner.includes("s")) height = clamp(snapToGrid(point.y - interaction.origin.y, size), MIN_ROOM_SIZE, BOARD_HEIGHT - interaction.origin.y);
-      if (interaction.corner.includes("w")) { x = clamp(snapToGrid(point.x, size), 0, right - MIN_ROOM_SIZE); width = right - x; }
-      if (interaction.corner.includes("n")) { y = clamp(snapToGrid(point.y, size), 0, bottom - MIN_ROOM_SIZE); height = bottom - y; }
+      if (interaction.corner.includes("w")) {
+        x = clamp(snapToGrid(point.x, size), 0, right - MIN_ROOM_SIZE);
+        width = right - x;
+      }
+      if (interaction.corner.includes("n")) {
+        y = clamp(snapToGrid(point.y, size), 0, bottom - MIN_ROOM_SIZE);
+        height = bottom - y;
+      }
 
       const candidate = { x, y, width, height };
       const valid = canPlaceRoom(candidate, roomsRef.current, interaction.roomId);
@@ -265,7 +312,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         badgeRef.current.style.left = `${(point.x / BOARD_WIDTH) * 100}%`;
         badgeRef.current.style.top = `${(point.y / BOARD_HEIGHT) * 100}%`;
         badgeTitleRef.current.textContent = interaction.name;
-        badgeNoteRef.current.textContent = `Room position ${Math.round(candidate.xPct * 100)}% x ${Math.round(candidate.yPct * 100)}%`;
+        badgeNoteRef.current.textContent = `${activeFloor?.name || "Floor"} position ${Math.round(candidate.xPct * 100)}% x ${Math.round(candidate.yPct * 100)}%`;
       }
     }
   }
@@ -279,6 +326,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
 
     function handlePointerUp() {
       if (!interactionRef.current) return;
+      if (pendingPointRef.current) flushInteraction();
       const interaction = interactionRef.current;
       const candidate = interaction.candidate;
       const valid = interaction.valid;
@@ -288,6 +336,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
           ? customRoomNameRef.current || "Custom Room"
           : ROOM_LIBRARY.find((item) => item.key === roomTypeRef.current)?.label || "Room";
         const nextRoom = createRoom({
+          floorId: activeFloorRef.current,
           type: roomTypeRef.current,
           name: ensureUniqueRoomName(baseName, roomsRef.current, null),
           x: candidate.x,
@@ -297,17 +346,23 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         });
         setRooms((current) => [...current, nextRoom]);
         setSelectedRoomId(nextRoom.id);
-        setMessage(`${nextRoom.name} added to the blueprint.`);
+        setMessage(`${nextRoom.name} added to ${activeFloor?.name || "the blueprint"}.`);
       }
 
       if ((interaction.type === "move" || interaction.type === "resize") && interaction.origin) {
-        if (candidate && valid) setRooms((current) => current.map((room) => (room.id === interaction.roomId ? { ...room, ...candidate } : room)));
-        else updateRoomPreview(interaction.roomId, interaction.origin, true);
+        if (candidate && valid) {
+          setRooms((current) => current.map((room) => (room.id === interaction.roomId ? { ...room, ...candidate } : room)));
+        } else {
+          updateRoomPreview(interaction.roomId, interaction.origin, true);
+        }
       }
 
       if (interaction.type === "device" && interaction.originPlacement) {
-        if (candidate) setDevices((current) => current.map((device) => (device.deviceId === interaction.deviceId ? { ...device, ...candidate } : device)));
-        else updateDevicePreview(interaction.deviceId, interaction.originPlacement);
+        if (candidate) {
+          setDevices((current) => current.map((device) => (device.deviceId === interaction.deviceId ? { ...device, ...candidate } : device)));
+        } else {
+          updateDevicePreview(interaction.deviceId, interaction.originPlacement);
+        }
       }
 
       interactionRef.current = null;
@@ -325,7 +380,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, []);
+  }, [activeFloor]);
 
   function handleBoardPointerDown(event) {
     if (loading || !boardRef.current) return;
@@ -341,7 +396,15 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       const device = devicesRef.current.find((item) => item.deviceId === deviceNode.dataset.setupDeviceId);
       if (!device) return;
       setSelectedRoomId(device.roomId);
-      interactionRef.current = { type: "device", deviceId: device.deviceId, roomId: device.roomId, name: device.name, originPlacement: { xPct: device.xPct, yPct: device.yPct }, candidate: null, valid: true };
+      interactionRef.current = {
+        type: "device",
+        deviceId: device.deviceId,
+        roomId: device.roomId,
+        name: device.name,
+        originPlacement: { xPct: device.xPct, yPct: device.yPct },
+        candidate: null,
+        valid: true,
+      };
       event.preventDefault();
       return;
     }
@@ -350,7 +413,15 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       const room = roomsRef.current.find((item) => item.id === resizeHandle.dataset.roomResize);
       if (!room) return;
       setSelectedRoomId(room.id);
-      interactionRef.current = { type: "resize", roomId: room.id, corner: resizeHandle.dataset.corner, start: point, origin: { x: room.x, y: room.y, width: room.width, height: room.height }, candidate: null, valid: true };
+      interactionRef.current = {
+        type: "resize",
+        roomId: room.id,
+        corner: resizeHandle.dataset.corner,
+        start: point,
+        origin: { x: room.x, y: room.y, width: room.width, height: room.height },
+        candidate: null,
+        valid: true,
+      };
       event.preventDefault();
       return;
     }
@@ -360,7 +431,14 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       const room = roomsRef.current.find((item) => item.id === roomId);
       if (!room) return;
       setSelectedRoomId(roomId);
-      interactionRef.current = { type: "move", roomId, start: point, origin: { x: room.x, y: room.y, width: room.width, height: room.height }, candidate: null, valid: true };
+      interactionRef.current = {
+        type: "move",
+        roomId,
+        start: point,
+        origin: { x: room.x, y: room.y, width: room.width, height: room.height },
+        candidate: null,
+        valid: true,
+      };
       event.preventDefault();
       return;
     }
@@ -382,17 +460,35 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     setStep(nextStep);
   }
 
+  function handleFloorChange(floorId) {
+    setActiveFloorId(floorId);
+    setSelectedRoomId(null);
+    setMessage("");
+  }
+
   function handleAddDevice(roomId, type) {
-    const room = rooms.find((item) => item.id === roomId);
-    if (!room) return setMessage("Please select a room first");
+    const room = activeRooms.find((item) => item.id === roomId);
+    if (!room) return setMessage(`Please select a room on ${activeFloor?.name || "this floor"} first`);
     const allowedDevices = getAllowedDeviceLibrary(room);
     const template = allowedDevices.find((item) => item.type === type);
     if (!template) return setMessage(`${room.name} does not support that device.`);
-    const count = devices.filter((device) => device.roomId === roomId && device.type === type).length;
-    const nextDevice = createDevice({ roomId: room.id, room: room.name, name: count ? `${template.name} ${count + 1}` : template.name, type: template.type, watts: template.watts, dailyHours: template.dailyHours, on: true }, devices.filter((device) => device.roomId === roomId).length);
+    const count = activeDevices.filter((device) => device.roomId === roomId && device.type === type).length;
+    const nextDevice = createDevice(
+      {
+        floorId: room.floorId,
+        roomId: room.id,
+        room: room.name,
+        name: count ? `${template.name} ${count + 1}` : template.name,
+        type: template.type,
+        watts: template.watts,
+        dailyHours: template.dailyHours,
+        on: true,
+      },
+      activeDevices.filter((device) => device.roomId === roomId).length
+    );
     setDevices((current) => [...current, nextDevice]);
     setSelectedRoomId(roomId);
-    setMessage(`${nextDevice.name} added to ${room.name}.`);
+    setMessage(`${nextDevice.name} added to ${room.name} on ${activeFloor?.name || "this floor"}.`);
   }
 
   function handleRoomDrop(event, roomId) {
@@ -402,9 +498,9 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   }
 
   function handleRenameRoom(roomId, value) {
-    const room = rooms.find((item) => item.id === roomId);
+    const room = activeRooms.find((item) => item.id === roomId);
     if (!room) return;
-    const name = ensureUniqueRoomName(value || room.name, rooms, roomId);
+    const name = ensureUniqueRoomName(value || room.name, activeRooms, roomId);
     setRooms((current) => current.map((item) => (item.id === roomId ? { ...item, name } : item)));
     setDevices((current) => current.map((item) => (item.roomId === roomId ? { ...item, room: name } : item)));
   }
@@ -412,26 +508,37 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   function handleRemoveRoom(roomId) {
     setRooms((current) => current.filter((room) => room.id !== roomId));
     setDevices((current) => current.filter((device) => device.roomId !== roomId));
-    setMessage("Room removed from the blueprint.");
+    setMessage(`Room removed from ${activeFloor?.name || "the blueprint"}.`);
   }
 
   function handleClearLayout() {
-    setRooms([]);
-    setDevices([]);
+    setRooms((current) => current.filter((room) => room.floorId !== activeFloorId));
+    setDevices((current) => current.filter((device) => device.floorId !== activeFloorId));
     setSelectedRoomId(null);
     setStep(1);
-    setMessage("Layout cleared.");
+    setMessage(`${activeFloor?.name || "This floor"} layout cleared.`);
   }
 
-  function handleRemoveDevice(deviceId) { setDevices((current) => current.filter((device) => device.deviceId !== deviceId)); }
-  function handleToggleDevice(deviceId) { setDevices((current) => current.map((device) => (device.deviceId === deviceId ? { ...device, on: !device.on } : device))); }
+  function handleRemoveDevice(deviceId) {
+    setDevices((current) => current.filter((device) => device.deviceId !== deviceId));
+  }
+
+  function handleToggleDevice(deviceId) {
+    setDevices((current) => current.map((device) => (device.deviceId === deviceId ? { ...device, on: !device.on } : device)));
+  }
+
   function handleDeviceWatts(deviceId, value) {
     const watts = Math.max(10, Number(value) || 0);
-    setDevices((current) => current.map((device) => device.deviceId === deviceId ? { ...device, watts, highUsage: watts >= 1000 } : device));
+    setDevices((current) => current.map((device) => (device.deviceId === deviceId ? { ...device, watts, highUsage: watts >= 1000 } : device)));
   }
 
   async function handleSave() {
-    if (!rooms.length) { setMessage("Please add at least one room first"); setStep(1); return; }
+    if (!rooms.length) {
+      setMessage("Please add at least one room first");
+      setStep(1);
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
@@ -439,7 +546,15 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       const finalHistory = syncTodayHistory(dailyHistory, finalMetrics.todayUsage);
       setMetrics(finalMetrics);
       setDailyHistory(finalHistory);
-      await api.saveLayout(session.token, { rooms: serializeRooms(rooms), appliances: serializeAppliances(devices), metrics: finalMetrics, dailyHistory: finalHistory, settings: { dailyLimit, darkMode: theme === "dark" }, setupCompleted: true });
+      await api.saveLayout(session.token, {
+        floors: serializeFloors(floors),
+        rooms: serializeRooms(rooms),
+        appliances: serializeAppliances(devices),
+        metrics: finalMetrics,
+        dailyHistory: finalHistory,
+        settings: { dailyLimit, darkMode: theme === "dark" },
+        setupCompleted: true,
+      });
       onSetupComplete({ settings: { dailyLimit, darkMode: theme === "dark" } });
       navigate("/dashboard", { replace: true });
     } catch (saveError) {
@@ -449,8 +564,11 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     }
   }
 
-  const gridStyle = { "--grid-step-x": `${(gridSize / BOARD_WIDTH) * 100}%`, "--grid-step-y": `${(gridSize / BOARD_HEIGHT) * 100}%` };
-  const selectedRoomDevices = devices.filter((device) => device.roomId === selectedRoomId);
+  const gridStyle = {
+    "--grid-step-x": `${(gridSize / BOARD_WIDTH) * 100}%`,
+    "--grid-step-y": `${(gridSize / BOARD_HEIGHT) * 100}%`,
+  };
+  const selectedRoomDevices = activeDevices.filter((device) => device.roomId === selectedRoomId);
   const availableDevices = selectedRoom ? getAllowedDeviceLibrary(selectedRoom) : [];
 
   return (
@@ -460,7 +578,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
           <div>
             <span className="section-tag">First-time setup</span>
             <h2>Build your smart house map</h2>
-            <p>Create rooms, place appliances, and save a blueprint-style layout before opening the dashboard.</p>
+            <p>Create rooms, place appliances, and save a realistic multi-floor smart home layout before opening the dashboard.</p>
           </div>
           <div className="topbar-actions">
             <button type="button" className="ghost-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "Light mode" : "Dark mode"}</button>
@@ -478,7 +596,13 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
             const title = item === 1 ? "Draw rooms" : item === 2 ? "Place devices" : "Review";
             const note = item === 1 ? "Create a floor-plan layout." : item === 2 ? "Add appliances into rooms." : "Save and open the dashboard.";
             return (
-              <button key={item} type="button" className={`step-chip clickable ${step === item ? "active" : ""} ${item < step ? "done" : ""} ${locked ? "locked" : ""}`} disabled={locked} onClick={() => goToStep(item)}>
+              <button
+                key={item}
+                type="button"
+                className={`step-chip clickable ${step === item ? "active" : ""} ${item < step ? "done" : ""} ${locked ? "locked" : ""}`}
+                disabled={locked}
+                onClick={() => goToStep(item)}
+              >
                 <strong>{item}. {title}</strong>
                 <span>{note}</span>
               </button>
@@ -486,13 +610,33 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
           })}
         </div>
 
+        <div className="floor-selector-row">
+          {floorStats.map((floor) => (
+            <button
+              key={floor.id}
+              type="button"
+              className={`floor-tab-chip ${activeFloorId === floor.id ? "active" : ""}`}
+              onClick={() => handleFloorChange(floor.id)}
+            >
+              <strong>{floor.name}</strong>
+              <span>{floor.roomCount} rooms | {floor.deviceCount} devices</span>
+              <small>{floor.activeWatts}W live | {floor.estimatedDailyKwh.toFixed(1)} kWh/day</small>
+            </button>
+          ))}
+        </div>
+
         <div className="setup-body">
           <article className="panel setup-canvas-card">
             <div className="panel-head">
               <div>
                 <span className="section-tag">Blueprint canvas</span>
-                <h3>{step === 1 ? "Architectural room builder" : step === 2 ? "Device placement canvas" : "Review the saved map"}</h3>
-                <p>{getStepNote(step)}</p>
+                <h3>{step === 1 ? `${activeFloor?.name || "Floor"} room builder` : step === 2 ? `${activeFloor?.name || "Floor"} device placement` : `Review ${activeFloor?.name || "floor"}`}</h3>
+                <p>{getStepNote(step, activeFloor?.name || "this floor")}</p>
+              </div>
+              <div className="blueprint-actions">
+                <span className={`status-pill ${activeFloorData?.overloadedCount ? "danger" : "ok"}`}>
+                  {activeFloorData?.overloadedCount ? `${activeFloorData.overloadedCount} overload warning${activeFloorData.overloadedCount > 1 ? "s" : ""}` : "Normal load"}
+                </span>
               </div>
             </div>
             <div className="grid-preset-row">
@@ -500,18 +644,61 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
                 <button key={size} type="button" className={`grid-preset-button ${gridSize === size ? "active" : ""}`} onClick={() => setGridSize(size)}>{size}px grid</button>
               ))}
             </div>
+            <div className="setup-floor-stats">
+              <MetricCard label="Selected floor" value={activeFloor?.name || "Floor 1"} note={`${activeFloorData?.roomCount || 0} rooms | ${activeFloorData?.deviceCount || 0} devices`} />
+              <MetricCard label="Live floor load" value={`${(activeFloorData?.activeLoadKw || 0).toFixed(2)} kW`} note={`${activeFloorData?.activeWatts || 0}W active`} />
+              <MetricCard label="Estimated daily" value={`${(activeFloorData?.estimatedDailyKwh || 0).toFixed(1)} kWh`} note="Per-floor modeled usage" />
+            </div>
             <div className="blueprint-shell">
               <div ref={boardRef} className="blueprint-board builder" style={gridStyle} onPointerDown={handleBoardPointerDown}>
-                <div className="blueprint-grid-meta"><strong>{BOARD_WIDTH}px x {BOARD_HEIGHT}px</strong><span>Snap-to-grid {gridSize}px</span></div>
-                {!roomStats.length ? <div className="blueprint-empty"><article className="setup-inline-card selected"><strong>Start with your first room</strong><span>Choose a room type and drag across the grid to create your floor plan.</span></article></div> : null}
+                <div className="blueprint-grid-meta">
+                  <strong>{BOARD_WIDTH}px x {BOARD_HEIGHT}px</strong>
+                  <span>{activeFloor?.name || "Floor"} | Snap-to-grid {gridSize}px</span>
+                </div>
+                {!roomStats.length ? (
+                  <div className="blueprint-empty">
+                    <article className="setup-inline-card selected">
+                      <strong>Start planning {activeFloor?.name || "this floor"}</strong>
+                      <span>Choose a room type and drag across the grid to create this floor&apos;s top-view layout.</span>
+                    </article>
+                  </div>
+                ) : null}
                 {roomStats.map((room) => (
-                  <article key={room.id} className={`floor-room ${selectedRoomId === room.id ? "selected" : ""} ${room.overloaded ? "overloaded" : ""}`} data-room-id={room.id} style={roomStyle(room)} onClick={() => setSelectedRoomId(room.id)} onDragOver={step === 2 ? (event) => event.preventDefault() : undefined} onDrop={step === 2 ? (event) => handleRoomDrop(event, room.id) : undefined}>
-                    <div className="floor-room-title" data-room-handle="move"><strong>{room.name}</strong><span>{step === 1 ? `${room.width}px x ${room.height}px` : `${room.activeWatts}W active`}</span></div>
+                  <article
+                    key={room.id}
+                    className={`floor-room ${selectedRoomId === room.id ? "selected" : ""} ${room.overloaded ? "overloaded" : ""}`}
+                    data-room-id={room.id}
+                    style={roomStyle(room)}
+                    onClick={() => setSelectedRoomId(room.id)}
+                    onDragOver={step === 2 ? (event) => event.preventDefault() : undefined}
+                    onDrop={step === 2 ? (event) => handleRoomDrop(event, room.id) : undefined}
+                  >
+                    <div className="floor-room-title" data-room-handle="move">
+                      <strong>{room.name}</strong>
+                      <span>{step === 1 ? `${room.width}px x ${room.height}px` : `${room.activeWatts}W active`}</span>
+                    </div>
                     {room.overloaded ? <span className="floor-room-warning">!</span> : null}
-                    {step === 1 ? <><button type="button" className="room-resize-handle nw" data-room-resize={room.id} data-corner="nw" /><button type="button" className="room-resize-handle ne" data-room-resize={room.id} data-corner="ne" /><button type="button" className="room-resize-handle sw" data-room-resize={room.id} data-corner="sw" /><button type="button" className="room-resize-handle se" data-room-resize={room.id} data-corner="se" /></> : null}
+                    {step === 1 ? (
+                      <>
+                        <button type="button" className="room-resize-handle nw" data-room-resize={room.id} data-corner="nw" />
+                        <button type="button" className="room-resize-handle ne" data-room-resize={room.id} data-corner="ne" />
+                        <button type="button" className="room-resize-handle sw" data-room-resize={room.id} data-corner="sw" />
+                        <button type="button" className="room-resize-handle se" data-room-resize={room.id} data-corner="se" />
+                      </>
+                    ) : null}
                     <div className="floor-room-devices">
                       {room.devices.map((device) => (
-                        <button key={device.deviceId} type="button" className={`map-device ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""} ${step === 2 ? "setup-draggable" : ""}`} data-setup-device-id={step === 2 ? device.deviceId : undefined} style={deviceStyle(device)} onClick={(event) => { event.stopPropagation(); setSelectedRoomId(room.id); }}>
+                        <button
+                          key={device.deviceId}
+                          type="button"
+                          className={`map-device ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""} ${step === 2 ? "setup-draggable" : ""}`}
+                          data-setup-device-id={step === 2 ? device.deviceId : undefined}
+                          style={deviceStyle(device)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedRoomId(room.id);
+                          }}
+                        >
                           <span className="map-device-icon"><ApplianceIcon type={device.type} /></span>
                           <strong>{device.name}</strong>
                           <span className="device-watts">{device.watts}W</span>
@@ -522,7 +709,10 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
                   </article>
                 ))}
                 <article ref={previewRef} className="floor-room-preview" style={{ display: "none" }} />
-                <div ref={badgeRef} className="setup-dimension-badge" style={{ display: "none" }}><strong ref={badgeTitleRef}>0px x 0px</strong><span ref={badgeNoteRef}>Release to save</span></div>
+                <div ref={badgeRef} className="setup-dimension-badge" style={{ display: "none" }}>
+                  <strong ref={badgeTitleRef}>0px x 0px</strong>
+                  <span ref={badgeNoteRef}>Release to save</span>
+                </div>
               </div>
             </div>
           </article>
@@ -530,38 +720,169 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
           <aside className="panel setup-sidebar">
             {step === 1 ? (
               <div className="builder-stack">
-                <div className="panel-head stacked"><div><span className="section-tag">Rooms</span><h3>Create the floor plan</h3><p>Select a room type, then drag across the blueprint to draw each room.</p></div></div>
-                <div className="palette-grid">{ROOM_LIBRARY.map((item) => <button key={item.key} type="button" className={`room-type-button ${roomType === item.key ? "active" : ""}`} onClick={() => setRoomType(item.key)}>{item.label}</button>)}</div>
-                {roomType === "custom" ? <label className="setup-field"><span>Custom room name</span><input value={customRoomName} onChange={(event) => setCustomRoomName(event.target.value)} maxLength={24} /></label> : null}
-                <div className="builder-note">{getStepNote(step)}</div>
-                <div className="room-line-list">{rooms.length ? rooms.map((room) => <button key={room.id} type="button" className={`room-line-item ${selectedRoomId === room.id ? "selected" : ""}`} onClick={() => setSelectedRoomId(room.id)}><strong>{room.name}</strong><span>{room.width}px x {room.height}px</span></button>) : <article className="setup-inline-card"><strong>No rooms yet</strong><span>Your custom floor plan will appear here after you draw on the grid.</span></article>}</div>
-                {selectedRoom ? <label className="setup-field"><span>Rename selected room</span><input value={selectedRoom.name} onChange={(event) => handleRenameRoom(selectedRoom.id, event.target.value)} maxLength={24} /></label> : null}
-                <div className="room-line-actions">{selectedRoom ? <button type="button" className="ghost-button" onClick={() => handleRemoveRoom(selectedRoom.id)}>Delete room</button> : null}<button type="button" className="ghost-button" onClick={handleClearLayout}>Clear layout</button></div>
+                <div className="panel-head stacked">
+                  <div>
+                    <span className="section-tag">Rooms</span>
+                    <h3>Create {activeFloor?.name || "this floor"}</h3>
+                    <p>Select a room type, then drag across the blueprint to draw each room on the active floor.</p>
+                  </div>
+                </div>
+                <div className="palette-grid">
+                  {ROOM_LIBRARY.map((item) => (
+                    <button key={item.key} type="button" className={`room-type-button ${roomType === item.key ? "active" : ""}`} onClick={() => setRoomType(item.key)}>{item.label}</button>
+                  ))}
+                </div>
+                {roomType === "custom" ? (
+                  <label className="setup-field">
+                    <span>Custom room name</span>
+                    <input value={customRoomName} onChange={(event) => setCustomRoomName(event.target.value)} maxLength={24} />
+                  </label>
+                ) : null}
+                <div className="builder-note">{getStepNote(step, activeFloor?.name || "this floor")}</div>
+                <div className="room-line-list">
+                  {activeRooms.length ? activeRooms.map((room) => (
+                    <button key={room.id} type="button" className={`room-line-item ${selectedRoomId === room.id ? "selected" : ""}`} onClick={() => setSelectedRoomId(room.id)}>
+                      <strong>{room.name}</strong>
+                      <span>{room.width}px x {room.height}px</span>
+                    </button>
+                  )) : (
+                    <article className="setup-inline-card">
+                      <strong>No rooms on {activeFloor?.name || "this floor"}</strong>
+                      <span>Draw rooms here or switch floors to continue building the house map.</span>
+                    </article>
+                  )}
+                </div>
+                {selectedRoom ? (
+                  <label className="setup-field">
+                    <span>Rename selected room</span>
+                    <input value={selectedRoom.name} onChange={(event) => handleRenameRoom(selectedRoom.id, event.target.value)} maxLength={24} />
+                  </label>
+                ) : null}
+                <div className="room-line-actions">
+                  {selectedRoom ? <button type="button" className="ghost-button" onClick={() => handleRemoveRoom(selectedRoom.id)}>Delete room</button> : null}
+                  <button type="button" className="ghost-button" onClick={handleClearLayout}>Clear {activeFloor?.name || "floor"}</button>
+                </div>
               </div>
             ) : null}
 
             {step === 2 ? (
               <div className="builder-stack">
-                <div className="panel-head stacked"><div><span className="section-tag">Devices</span><h3>Place appliances inside rooms</h3><p>Click a device to add it, then drag it within the selected room.</p></div></div>
-                <div className="room-pill-grid">{rooms.map((room) => <button key={room.id} type="button" className={`room-pill ${selectedRoomId === room.id ? "active" : ""}`} onClick={() => setSelectedRoomId(room.id)}>{room.name}</button>)}</div>
-                <div className="device-palette">{availableDevices.length ? availableDevices.map((device) => <button key={device.type} type="button" draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", device.type)} onClick={() => handleAddDevice(selectedRoomId, device.type)}><span className="map-device-icon"><ApplianceIcon type={device.type} /></span><strong>{device.name}</strong><span>{device.watts}W default</span></button>) : <article className="setup-inline-card"><strong>No device options</strong><span>Select a room to see the devices allowed there.</span></article>}</div>
-                <div className="builder-note">{selectedRoom ? `Selected room: ${selectedRoom.name}. Drag existing devices to reposition them.` : "Select a room to add devices."}</div>
-                <div className="setup-device-list">{selectedRoomDevices.length ? selectedRoomDevices.map((device) => <article key={device.deviceId} className="setup-device-row"><strong>{device.name}</strong><span>{device.watts}W, {device.on ? "currently ON" : "currently OFF"}</span><div className="setup-inline-grid"><label className="inline-field"><span>Watts</span><input type="number" min="10" max="5000" value={device.watts} onChange={(event) => handleDeviceWatts(device.deviceId, event.target.value)} /></label><button type="button" className="ghost-button" onClick={() => handleToggleDevice(device.deviceId)}>{device.on ? "Turn OFF" : "Turn ON"}</button></div><button type="button" className="ghost-button" onClick={() => handleRemoveDevice(device.deviceId)}>Remove device</button></article>) : <article className="setup-inline-card"><strong>No devices in this room</strong><span>Add a device from the palette to begin controlling it.</span></article>}</div>
+                <div className="panel-head stacked">
+                  <div>
+                    <span className="section-tag">Devices</span>
+                    <h3>Place appliances on {activeFloor?.name || "this floor"}</h3>
+                    <p>Click a device to add it, then drag it within the selected room on the active floor.</p>
+                  </div>
+                </div>
+                <div className="room-pill-grid">
+                  {activeRooms.map((room) => (
+                    <button key={room.id} type="button" className={`room-pill ${selectedRoomId === room.id ? "active" : ""}`} onClick={() => setSelectedRoomId(room.id)}>{room.name}</button>
+                  ))}
+                </div>
+                <div className="device-palette">
+                  {availableDevices.length ? availableDevices.map((device) => (
+                    <button
+                      key={device.type}
+                      type="button"
+                      draggable
+                      onDragStart={(event) => event.dataTransfer.setData("text/plain", device.type)}
+                      onClick={() => handleAddDevice(selectedRoomId, device.type)}
+                    >
+                      <span className="map-device-icon"><ApplianceIcon type={device.type} /></span>
+                      <strong>{device.name}</strong>
+                      <span>{device.watts}W default</span>
+                    </button>
+                  )) : (
+                    <article className="setup-inline-card">
+                      <strong>No device options</strong>
+                      <span>{activeRooms.length ? "Select a room to see the devices allowed there." : `Add a room on ${activeFloor?.name || "this floor"} first.`}</span>
+                    </article>
+                  )}
+                </div>
+                <div className="builder-note">
+                  {selectedRoom ? `Selected room: ${selectedRoom.name}. Drag existing devices to reposition them inside ${activeFloor?.name || "this floor"}.` : `Select a room on ${activeFloor?.name || "this floor"} to add devices.`}
+                </div>
+                <div className="setup-device-list">
+                  {selectedRoomDevices.length ? selectedRoomDevices.map((device) => (
+                    <article key={device.deviceId} className="setup-device-row">
+                      <strong>{device.name}</strong>
+                      <span>{device.watts}W, {device.on ? "currently ON" : "currently OFF"}</span>
+                      <div className="setup-inline-grid">
+                        <label className="inline-field">
+                          <span>Watts</span>
+                          <input type="number" min="10" max="5000" value={device.watts} onChange={(event) => handleDeviceWatts(device.deviceId, event.target.value)} />
+                        </label>
+                        <button type="button" className="ghost-button" onClick={() => handleToggleDevice(device.deviceId)}>{device.on ? "Turn OFF" : "Turn ON"}</button>
+                      </div>
+                      <button type="button" className="ghost-button" onClick={() => handleRemoveDevice(device.deviceId)}>Remove device</button>
+                    </article>
+                  )) : (
+                    <article className="setup-inline-card">
+                      <strong>No devices in this room</strong>
+                      <span>Add a device from the palette to begin controlling it.</span>
+                    </article>
+                  )}
+                </div>
               </div>
             ) : null}
 
             {step === 3 ? (
               <div className="builder-stack">
-                <div className="panel-head stacked"><div><span className="section-tag">Review</span><h3>Save your smart home layout</h3><p>Check the room blueprint, device counts, and usage assumptions before saving.</p></div></div>
-                <div className="setup-summary-grid"><MetricCard label="Rooms" value={rooms.length} note="Saved on the house map" /><MetricCard label="Devices" value={devices.length} note="Placed across rooms" /><MetricCard label="Devices ON" value={devices.filter((device) => device.on).length} note="Realtime starting state" /><MetricCard label="Est. bill" value={formatCurrency(metrics.billEstimate)} note="Based on current device mix" /></div>
-                <div className="room-line-list">{roomStats.map((room) => <article key={room.id} className="room-line-item"><strong>{room.name}</strong><span>{room.devices.length} devices, {room.activeWatts}W active load</span></article>)}</div>
-                <label className="settings-control"><span>Daily usage limit</span><input type="range" min="10" max="60" value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} /><strong>{dailyLimit} kWh</strong></label>
+                <div className="panel-head stacked">
+                  <div>
+                    <span className="section-tag">Review</span>
+                    <h3>Save your multi-floor smart home layout</h3>
+                    <p>Check the room blueprint, device counts, and per-floor load before saving it into the dashboard.</p>
+                  </div>
+                </div>
+                <div className="setup-summary-grid">
+                  <MetricCard label="Floors" value={floors.length} note="Connected in the house map" />
+                  <MetricCard label="Rooms" value={rooms.length} note="Saved across all floors" />
+                  <MetricCard label="Devices" value={devices.length} note="Placed across rooms" />
+                  <MetricCard label="Est. bill" value={formatCurrency(metrics.billEstimate)} note="Based on current device mix" />
+                </div>
+                <div className="room-line-list">
+                  {floorStats.map((floor) => (
+                    <article key={floor.id} className={`room-line-item ${floor.id === activeFloorId ? "selected" : ""}`}>
+                      <strong>{floor.name}</strong>
+                      <span>{floor.roomCount} rooms, {floor.deviceCount} devices, {floor.activeWatts}W active</span>
+                    </article>
+                  ))}
+                </div>
+                <div className="room-line-list">
+                  {roomStats.length ? roomStats.map((room) => (
+                    <article key={room.id} className="room-line-item">
+                      <strong>{room.name}</strong>
+                      <span>{room.devices.length} devices, {room.activeWatts}W active load</span>
+                    </article>
+                  )) : (
+                    <article className="setup-inline-card">
+                      <strong>No rooms on {activeFloor?.name || "this floor"}</strong>
+                      <span>Switch floors to review another level of the house map.</span>
+                    </article>
+                  )}
+                </div>
+                <label className="settings-control">
+                  <span>Daily usage limit</span>
+                  <input type="range" min="10" max="60" value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
+                  <strong>{dailyLimit} kWh</strong>
+                </label>
               </div>
             ) : null}
           </aside>
         </div>
-
-        <div className="panel setup-actions"><div className="setup-hint"><strong>{step === 1 ? "Draw rooms" : step === 2 ? "Place devices" : "Review and save"}</strong><span>{getStepNote(step)}</span></div><div className="setup-action-row">{step > 1 ? <button type="button" className="ghost-button" onClick={() => goToStep(step - 1)}>Back</button> : null}{step === 1 ? <button type="button" className="primary-button" disabled={!rooms.length} onClick={() => goToStep(2)}>Place devices</button> : null}{step === 2 ? <button type="button" className="primary-button" disabled={!devices.length} onClick={() => goToStep(3)}>Review dashboard</button> : null}{step === 3 ? <button type="button" className="primary-button" disabled={saving || !rooms.length} onClick={handleSave}>{saving ? "Saving..." : session?.setupCompleted ? "Update dashboard" : "Save and open dashboard"}</button> : null}</div></div>
+        <div className="panel setup-actions">
+          <div className="setup-hint">
+            <strong>{step === 1 ? `Draw rooms for ${activeFloor?.name || "this floor"}` : step === 2 ? `Place devices on ${activeFloor?.name || "this floor"}` : "Review and save"}</strong>
+            <span>{getStepNote(step, activeFloor?.name || "this floor")}</span>
+          </div>
+          <div className="setup-action-row">
+            {step > 1 ? <button type="button" className="ghost-button" onClick={() => goToStep(step - 1)}>Back</button> : null}
+            {step === 1 ? <button type="button" className="primary-button" disabled={!rooms.length} onClick={() => goToStep(2)}>Place devices</button> : null}
+            {step === 2 ? <button type="button" className="primary-button" disabled={!devices.length} onClick={() => goToStep(3)}>Review dashboard</button> : null}
+            {step === 3 ? <button type="button" className="primary-button" disabled={saving || !rooms.length} onClick={handleSave}>{saving ? "Saving..." : session?.setupCompleted ? "Update dashboard" : "Save and open dashboard"}</button> : null}
+          </div>
+        </div>
       </div>
     </div>
   );
