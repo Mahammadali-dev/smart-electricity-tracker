@@ -22,8 +22,8 @@ export const DEVICE_LIBRARY = [
 const ROOM_DEVICE_TYPES = {
   living: ["fan", "ac", "light", "tv", "fridge"],
   bedroom: ["fan", "ac", "light"],
-  kitchen: ["fan", "ac", "light", "tv", "fridge"],
-  bathroom: ["light", "ac", "water-heater"],
+  kitchen: ["fan", "light", "fridge"],
+  bathroom: ["light", "water-heater"],
   custom: ["fan", "ac", "light", "tv", "fridge", "water-heater"],
 };
 
@@ -53,11 +53,8 @@ const applianceBlueprints = [
   { room: "Bedroom", name: "AC", type: "ac", watts: 1300, dailyHours: 3.6, on: false },
   { room: "Bedroom", name: "Light", type: "light", watts: 60, dailyHours: 5.0, on: true },
   { room: "Kitchen", name: "Fan", type: "fan", watts: 55, dailyHours: 6.2, on: true },
-  { room: "Kitchen", name: "AC", type: "ac", watts: 900, dailyHours: 1.5, on: false },
   { room: "Kitchen", name: "Light", type: "light", watts: 80, dailyHours: 7.0, on: true },
-  { room: "Kitchen", name: "TV", type: "tv", watts: 95, dailyHours: 1.0, on: false },
   { room: "Kitchen", name: "Refrigerator", type: "fridge", watts: 260, dailyHours: 22.0, on: true },
-  { room: "Bathroom", name: "AC", type: "ac", watts: 650, dailyHours: 1.2, on: false },
   { room: "Bathroom", name: "Light", type: "light", watts: 50, dailyHours: 3.3, on: true },
   { room: "Bathroom", name: "Water Heater", type: "water-heater", watts: 1800, dailyHours: 1.2, on: false },
 ];
