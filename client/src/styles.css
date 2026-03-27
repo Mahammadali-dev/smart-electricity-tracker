@@ -1582,3 +1582,102 @@ body.theme-dark {
     transform: scale(1.12);
   }
 }
+
+html {
+  scroll-behavior: smooth;
+}
+
+.cursor-glow {
+  transition: opacity 320ms ease;
+}
+
+.panel,
+.metric-card,
+.alert-card,
+.device-detail-item,
+.comparison-row,
+.access-card,
+.energy-stat-card,
+.energy-device-row,
+.floor-load-row,
+.floor-tab-chip,
+.nav-button,
+.mobile-nav-button,
+.ghost-button,
+.primary-button,
+.toggle-inline,
+.toggle-setting {
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 420ms cubic-bezier(0.22, 1, 0.36, 1), border-color 320ms ease, background 320ms ease, color 240ms ease, opacity 240ms ease;
+}
+
+.chart-fill,
+.limit-bar span,
+.floor-load-meter span {
+  transition: width 760ms cubic-bezier(0.22, 1, 0.36, 1), height 760ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 280ms ease;
+}
+
+.energy-core,
+.energy-core-ring,
+.energy-alert-strip,
+.energy-device-row,
+.floor-load-row,
+.status-card-glow {
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms ease, border-color 320ms ease;
+}
+
+.energy-core-ring {
+  animation-duration: 4.8s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.energy-alert-strip.warning {
+  animation-duration: 3.6s;
+}
+
+.chart-fill,
+.metric-card strong,
+.hero-badge strong,
+.energy-core strong,
+.energy-stat-card strong,
+.floor-load-row small,
+.status-card strong {
+  text-rendering: geometricPrecision;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .cursor-glow,
+  .energy-core-ring,
+  .energy-alert-strip.warning,
+  .map-device.on .map-device-aura,
+  .device-energy-flow span {
+    animation: none !important;
+  }
+
+  .panel,
+  .metric-card,
+  .alert-card,
+  .device-detail-item,
+  .comparison-row,
+  .access-card,
+  .energy-stat-card,
+  .energy-device-row,
+  .floor-load-row,
+  .floor-tab-chip,
+  .nav-button,
+  .mobile-nav-button,
+  .ghost-button,
+  .primary-button,
+  .toggle-inline,
+  .toggle-setting,
+  .chart-fill,
+  .limit-bar span,
+  .floor-load-meter span,
+  .map-device,
+  .floor-room {
+    transition-duration: 0.01ms !important;
+  }
+}

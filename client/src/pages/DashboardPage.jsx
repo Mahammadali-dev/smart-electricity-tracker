@@ -58,6 +58,28 @@ const userAccess = [
   { name: "Caretaker", role: "Restricted", access: "Lighting and alerts only" },
 ];
 
+const METRIC_TWEEN_FIELDS = ["liveLoadKw", "todayUsage", "weeklyUsage", "monthlyUsage", "voltage", "current", "billEstimate", "activeDevices"];
+
+function blendMetricsSnapshot(fromMetrics, toMetrics, progress, dailyLimit) {
+  const next = { ...toMetrics };
+
+  for (const key of METRIC_TWEEN_FIELDS) {
+    const start = Number(fromMetrics?.[key] ?? toMetrics?.[key] ?? 0);
+    const end = Number(toMetrics?.[key] ?? start);
+    const blended = start + (end - start) * progress;
+
+    if (key === "voltage" || key === "billEstimate" || key === "activeDevices") {
+      next[key] = Math.round(blended);
+    } else {
+      next[key] = Number(blended.toFixed(3));
+    }
+  }
+
+  next.lowVoltage = next.voltage < 210;
+  next.overLimit = next.todayUsage > dailyLimit;
+  return next;
+}
+
 function formatNumber(value, digits = 1) {
   return Number(value || 0).toFixed(digits);
 }
@@ -150,6 +172,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   const [gridSize, setGridSize] = useState(initialGridSize);
   const [simulationMode, setSimulationMode] = useState(initialSimulationMode);
   const [metrics, setMetrics] = useState(initialMetrics);
+  const [displayMetrics, setDisplayMetrics] = useState(initialMetrics);
+  const displayMetricsRef = useRef(initialMetrics);
   const [dailyHistory, setDailyHistory] = useState(createInitialHistory(initialMetrics.todayUsage, placeType));
   const [notificationPrefs, setNotificationPrefs] = useState(notificationDefaults);
   const [selectedRoomId, setSelectedRoomId] = useState(initialRooms[0]?.id || null);
@@ -172,13 +196,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   const weeklyTrend = useMemo(() => buildTrendSeries("weekly", metrics, dailyHistory, placeType), [metrics, dailyHistory, placeType]);
   const monthlyTrend = useMemo(() => buildTrendSeries("monthly", metrics, dailyHistory, placeType), [metrics, dailyHistory, placeType]);
   const deviceComparison = useMemo(() => buildDeviceComparison(appliances, rooms, floors, placeType), [appliances, rooms, floors, placeType]);
-  const remainingUsage = Math.max(0, dailyLimit - metrics.todayUsage);
-  const livePowerWatts = Math.round(metrics.liveLoadKw * 1000);
+  const viewMetrics = displayMetrics;
+  const remainingUsage = Math.max(0, dailyLimit - viewMetrics.todayUsage);
+  const livePowerWatts = Math.round(viewMetrics.liveLoadKw * 1000);
   const liveWarningThreshold = useMemo(() => getLiveWarningThreshold(placeType), [placeType]);
   const highUsageActiveCount = useMemo(() => activeAppliances.filter((device) => device.on && device.highUsage).length, [activeAppliances]);
   const activeDeviceFeed = useMemo(() => activeAppliances.slice().sort((left, right) => (Number(right.on) - Number(left.on)) || right.watts - left.watts).slice(0, 8), [activeAppliances]);
   const maxFloorWatts = useMemo(() => Math.max(...floorStats.map((floor) => floor.activeWatts), 1), [floorStats]);
-  const warningActive = metrics.lowVoltage || metrics.unusualSpike || livePowerWatts > liveWarningThreshold;
+  const warningActive = viewMetrics.lowVoltage || viewMetrics.unusualSpike || livePowerWatts > liveWarningThreshold;
   const floorLoadRatio = Math.min(100, Math.round((livePowerWatts / liveWarningThreshold) * 100));
   useEffect(() => {
     const host = shellRef.current;
@@ -191,8 +216,12 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     let frameId = 0;
 
     const render = () => {
-      current.x += (target.x - current.x) * 0.12;
-      current.y += (target.y - current.y) * 0.12;
+      const deltaX = target.x - current.x;
+      const deltaY = target.y - current.y;
+      const distance = Math.hypot(deltaX, deltaY);
+      const easing = Math.min(0.26, 0.12 + distance / 1800);
+      current.x += deltaX * easing;
+      current.y += deltaY * easing;
       host.style.setProperty("--cursor-x", `${current.x}px`);
       host.style.setProperty("--cursor-y", `${current.y}px`);
       frameId = window.requestAnimationFrame(render);
@@ -220,6 +249,38 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
       window.removeEventListener("blur", handlePointerLeave);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      displayMetricsRef.current = metrics;
+      setDisplayMetrics(metrics);
+      return undefined;
+    }
+
+    const fromMetrics = displayMetricsRef.current;
+    const toMetrics = metrics;
+    const start = window.performance.now();
+    const duration = 540;
+    let frameId = 0;
+
+    const animate = (time) => {
+      const progress = Math.min(1, (time - start) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const nextMetrics = blendMetricsSnapshot(fromMetrics, toMetrics, eased, dailyLimit);
+      displayMetricsRef.current = nextMetrics;
+      setDisplayMetrics(nextMetrics);
+
+      if (progress < 1) {
+        frameId = window.requestAnimationFrame(animate);
+      } else {
+        displayMetricsRef.current = toMetrics;
+        setDisplayMetrics(toMetrics);
+      }
+    };
+
+    frameId = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [metrics, dailyLimit]);
 
   useEffect(() => {
     let ignore = false;
@@ -570,11 +631,11 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             <span className="energy-core-ring energy-core-ring-one" />
             <span className="energy-core-ring energy-core-ring-two" />
             <span className="energy-core-ring energy-core-ring-three" />
-            <strong>{formatNumber(metrics.liveLoadKw, 2)}</strong>
+            <strong>{formatNumber(viewMetrics.liveLoadKw, 2)}</strong>
             <small>kW live</small>
           </div>
           <div className="energy-orb-copy">
-            <strong>{metrics.activeDevices} active devices</strong>
+            <strong>{viewMetrics.activeDevices} active devices</strong>
             <span>{activeFloor?.name || "Current floor"} is carrying {formatInteger(activeFloorData?.activeWatts || 0)}W right now.</span>
           </div>
         </div>
@@ -582,7 +643,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
         <div className="energy-stat-grid">
           <article className="energy-stat-card">
             <span>Peak hour</span>
-            <strong>{metrics.peakHour ? "Active" : "Idle"}</strong>
+            <strong>{viewMetrics.peakHour ? "Active" : "Idle"}</strong>
             <small>Usage window reacts in real time</small>
           </article>
           <article className="energy-stat-card">
@@ -592,8 +653,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           </article>
           <article className="energy-stat-card">
             <span>Voltage</span>
-            <strong>{metrics.voltage}V</strong>
-            <small>{metrics.lowVoltage ? "Low voltage watch" : "Line stable"}</small>
+            <strong>{viewMetrics.voltage}V</strong>
+            <small>{viewMetrics.lowVoltage ? "Low voltage watch" : "Line stable"}</small>
           </article>
           <article className="energy-stat-card">
             <span>Threshold</span>
@@ -605,10 +666,10 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
         <div className={`energy-alert-strip ${warningActive ? "warning" : "ok"}`}>
           <strong>{warningActive ? "High usage warning" : "System operating normally"}</strong>
           <span>
-            {metrics.unusualSpike
+            {viewMetrics.unusualSpike
               ? "Unusual power spike detected."
-              : metrics.lowVoltage
-                ? `Voltage dipped to ${metrics.voltage}V.`
+              : viewMetrics.lowVoltage
+                ? `Voltage dipped to ${viewMetrics.voltage}V.`
                 : livePowerWatts > liveWarningThreshold
                   ? `Live power crossed ${formatInteger(liveWarningThreshold)}W.`
                   : "Power draw remains inside the recommended operating envelope."}
@@ -672,13 +733,13 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           <article className="panel hero-panel cinematic-hero-panel">
             <div className="hero-copy">
               <span className="section-tag">{placeConfig.label} AI simulation</span>
-              <h2>{formatNumber(metrics.liveLoadKw, 2)} kW live load</h2>
+              <h2>{formatNumber(viewMetrics.liveLoadKw, 2)} kW live load</h2>
               <p>{placeConfig.simulationMode}. Voltage, current, floor demand, and device activity are refreshed continuously from the intelligent simulation engine.</p>
             </div>
             <div className="hero-badge cinematic-hero-badge">
-              <strong>{metrics.activeDevices}</strong>
+              <strong>{viewMetrics.activeDevices}</strong>
               <span>devices active</span>
-              <small>{metrics.peakHour ? "Peak-hour modulation" : "Normal demand window"}</small>
+              <small>{viewMetrics.peakHour ? "Peak-hour modulation" : "Normal demand window"}</small>
             </div>
           </article>
 
@@ -686,12 +747,12 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             <span className="section-tag">Smart daily usage</span>
             <h3>{formatNumber(remainingUsage, 1)} kWh left</h3>
             <p>
-              {metrics.overLimit
-                ? `${formatNumber(metrics.todayUsage - dailyLimit, 1)} kWh above the set limit.`
-                : `${formatNumber((metrics.todayUsage / dailyLimit) * 100, 0)}% of the limit already used.`}
+              {viewMetrics.overLimit
+                ? `${formatNumber(viewMetrics.todayUsage - dailyLimit, 1)} kWh above the set limit.`
+                : `${formatNumber((viewMetrics.todayUsage / dailyLimit) * 100, 0)}% of the limit already used.`}
             </p>
             <div className="limit-bar cinematic-limit-bar">
-              <span style={{ width: `${Math.min(100, (metrics.todayUsage / dailyLimit) * 100)}%` }} />
+              <span style={{ width: `${Math.min(100, (viewMetrics.todayUsage / dailyLimit) * 100)}%` }} />
             </div>
           </article>
         </section>
@@ -881,14 +942,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             <div className="panel-head">
               <div>
                 <span className="section-tag">Bill estimate</span>
-                <h3>{formatCurrency(metrics.billEstimate)}</h3>
+                <h3>{formatCurrency(viewMetrics.billEstimate)}</h3>
                 <p>Projected bill based on the current monthly usage pattern.</p>
               </div>
             </div>
 
             <div className="bill-insights">
-              <MetricCard label="Month usage" value={`${formatNumber(metrics.monthlyUsage, 1)} kWh`} note="Simulated projection" />
-              <MetricCard label="Peak hour" value={metrics.peakHour ? "Active" : "Idle"} note="6 PM to 10 PM window" />
+              <MetricCard label="Month usage" value={`${formatNumber(viewMetrics.monthlyUsage, 1)} kWh`} note="Simulated projection" />
+              <MetricCard label="Peak hour" value={viewMetrics.peakHour ? "Active" : "Idle"} note="6 PM to 10 PM window" />
             </div>
           </article>
 
