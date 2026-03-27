@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0B0F14" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="GridSense" />
+    <title>Smart Electricity Usage Tracker</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="theme-dark">
+    <div class="page-shell">
+      <section id="auth-view" class="auth-layout">
+        <article class="auth-hero panel">
+          <span class="eyebrow">Smart Electricity Tracker</span>
+          <h1>Monitor live power, control appliances, design your house map, and reduce electricity waste.</h1>
+          <p>
+            Secure login, first-time floor-plan setup, real-time usage simulation, appliance control,
+            alerts, analytics, bill estimation, and installable app support in one workflow.
+          </p>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <strong>Setup wizard</strong>
+              <span>Create a custom top-view house map before entering the dashboard.</span>
+            </article>
+            <article class="feature-card">
+              <strong>Realtime control</strong>
+              <span>Track kWh, voltage, current, alerts, and appliance state in one place.</span>
+            </article>
+            <article class="feature-card">
+              <strong>PWA ready</strong>
+              <span>Install with icon, standalone mode, and offline shell support.</span>
+            </article>
+          </div>
+        </article>
+
+        <article class="auth-card panel">
+          <div class="auth-switcher">
+            <button type="button" class="auth-tab active" data-auth-tab="login">Login</button>
+            <button type="button" class="auth-tab" data-auth-tab="signup">Signup</button>
+          </div>
+
+          <form id="login-form" class="auth-form">
+            <div class="auth-copy">
+              <span class="eyebrow">Secure Login</span>
+              <h2>Welcome back</h2>
+              <p>Sign in to load your saved electricity profile, floor plan, and IoT device states.</p>
+            </div>
+
+            <label>
+              <span>Email</span>
+              <input type="email" name="email" placeholder="you@example.com" required />
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" name="password" placeholder="Enter your password" required />
+            </label>
+            <div id="login-error" class="form-message hidden"></div>
+            <button type="submit" class="primary-button">Login</button>
+            <div class="auth-meta">
+              <button type="button" id="forgot-password-button" class="text-button">Forgot password?</button>
+            </div>
+          </form>
+
+          <form id="signup-form" class="auth-form hidden">
+            <div class="auth-copy">
+              <span class="eyebrow">Create Account</span>
+              <h2>Get started</h2>
+              <p>Create your account to build a smart floor plan and start tracking electricity usage.</p>
+            </div>
+
+            <label>
+              <span>Name</span>
+              <input type="text" name="name" placeholder="Your full name" required />
+            </label>
+            <label>
+              <span>Email</span>
+              <input type="email" name="email" placeholder="you@example.com" required />
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" name="password" placeholder="At least 6 characters" minlength="6" required />
+            </label>
+            <div id="signup-error" class="form-message hidden"></div>
+            <button type="submit" class="primary-button">Signup</button>
+          </form>
+        </article>
+      </section>
+
+      <section id="setup-view" class="setup-layout hidden">
+        <div class="setup-shell">
+          <article class="setup-topbar panel">
+            <div>
+              <span class="eyebrow">First-Time Setup</span>
+              <h2 id="setup-title">Build your smart house map</h2>
+              <p id="setup-subtitle">Create rooms, place appliances, and save a blueprint-style layout before opening the dashboard.</p>
+            </div>
+            <div class="topbar-actions">
+              <button type="button" id="setup-install-button" class="ghost-button" data-install-app>Install app</button>
+              <button type="button" id="setup-secondary-button" class="ghost-button">Back</button>
+            </div>
+          </article>
+
+          <div id="setup-message" class="form-message hidden"></div>
+          <div id="setup-steps" class="setup-step-row"></div>
+
+          <div class="setup-body">
+            <article class="setup-canvas-card panel">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Blueprint Canvas</span>
+                  <h3 id="setup-canvas-title">Architectural top view</h3>
+                  <p id="setup-canvas-copy">Use the grid to create your custom smart-home layout.</p>
+                </div>
+              </div>
+              <div id="setup-canvas-shell"></div>
+            </article>
+
+            <aside id="setup-sidebar" class="setup-sidebar panel"></aside>
+          </div>
+
+          <article class="setup-actions panel">
+            <div class="setup-hint">
+              <strong id="setup-hint-title">Step guidance</strong>
+              <span id="setup-hint-copy">Select a room type, then drag across the grid to draw your floor plan.</span>
+            </div>
+            <div class="setup-action-row">
+              <button type="button" id="setup-prev" class="ghost-button">Previous</button>
+              <button type="button" id="setup-next" class="primary-button">Next</button>
+              <button type="button" id="setup-save" class="primary-button hidden">Save and open dashboard</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="app-view" class="app-layout hidden">
+        <aside class="sidebar panel">
+          <div class="brand-block">
+            <span id="deployment-label" class="eyebrow">Home users</span>
+            <h2>GridSense Control</h2>
+            <p>Smart electricity management with live appliance telemetry, custom floor plans, and room-wise control.</p>
+          </div>
+
+          <div class="nav-list">
+            <button type="button" class="nav-button active" data-tab="home">Home</button>
+            <button type="button" class="nav-button" data-tab="devices">Devices</button>
+            <button type="button" class="nav-button" data-tab="analytics">Analytics</button>
+            <button type="button" class="nav-button" data-tab="settings">Settings</button>
+          </div>
+
+          <div class="sidebar-footer">
+            <div class="user-card">
+              <strong id="profile-name">Primary User</strong>
+              <span id="profile-email">user@example.com</span>
+            </div>
+            <button type="button" id="logout-button" class="ghost-button">Logout</button>
+          </div>
+        </aside>
+
+        <main class="main-stack">
+          <header class="topbar panel">
+            <div>
+              <span class="eyebrow">Authenticated Workspace</span>
+              <h2>Smart Electricity Usage Tracker</h2>
+              <p>Monitor electricity consumption, control appliances remotely, and analyze power demand in real time.</p>
+            </div>
+            <div class="topbar-actions">
+              <div class="status-chip">
+                <strong id="sync-status">Live</strong>
+                <span>data sync</span>
+              </div>
+              <button type="button" id="install-app-topbar" class="ghost-button" data-install-app>Install app</button>
+              <button type="button" id="theme-toggle" class="ghost-button">Light mode</button>
+            </div>
+          </header>
+
+          <div id="global-message" class="form-message hidden"></div>
+
+          <section id="screen-home" class="screen active"></section>
+          <section id="screen-devices" class="screen hidden"></section>
+          <section id="screen-analytics" class="screen hidden"></section>
+          <section id="screen-settings" class="screen hidden"></section>
+        </main>
+
+        <nav class="mobile-nav panel">
+          <button type="button" class="mobile-nav-button active" data-tab="home">Home</button>
+          <button type="button" class="mobile-nav-button" data-tab="devices">Devices</button>
+          <button type="button" class="mobile-nav-button" data-tab="analytics">Analytics</button>
+          <button type="button" class="mobile-nav-button" data-tab="settings">Settings</button>
+        </nav>
+      </section>
+    </div>
+
+    <div id="password-reset-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close-reset="true"></div>
+      <div class="modal-card panel auth-reset-card">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Password Recovery</span>
+            <h3>Reset your password</h3>
+            <p>Request a one-time OTP by email, then enter the code and choose a new password.</p>
+          </div>
+          <button type="button" class="ghost-button" data-close-reset="true">Close</button>
+        </div>
+        <div class="auth-reset-grid">
+          <form id="forgot-password-form" class="auth-form">
+            <div class="auth-copy">
+              <span class="eyebrow">Step 1</span>
+              <h4>Send OTP</h4>
+              <p>Enter the email address linked to your account.</p>
+            </div>
+            <label>
+              <span>Email</span>
+              <input id="forgot-password-email" type="email" name="email" placeholder="you@example.com" required />
+            </label>
+            <div id="forgot-password-message" class="form-message hidden"></div>
+            <button type="submit" class="primary-button">Send OTP</button>
+          </form>
+
+          <form id="reset-password-form" class="auth-form">
+            <div class="auth-copy">
+              <span class="eyebrow">Step 2</span>
+              <h4>Verify and change password</h4>
+              <p>Use the OTP from your email and set a new password.</p>
+            </div>
+            <label>
+              <span>Email</span>
+              <input id="reset-password-email" type="email" name="email" placeholder="you@example.com" required />
+            </label>
+            <label>
+              <span>OTP</span>
+              <input id="reset-password-otp" type="text" name="otp" inputmode="numeric" maxlength="6" placeholder="6-digit OTP" required />
+            </label>
+            <label>
+              <span>New password</span>
+              <input id="reset-password-new" type="password" name="newPassword" minlength="6" placeholder="At least 6 characters" required />
+            </label>
+            <label>
+              <span>Confirm new password</span>
+              <input id="reset-password-confirm" type="password" name="confirmPassword" minlength="6" placeholder="Re-enter new password" required />
+            </label>
+            <div id="reset-password-message" class="form-message hidden"></div>
+            <button type="submit" class="primary-button">Verify OTP &amp; Change Password</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="room-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-card panel">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Room Summary</span>
+            <h3 id="modal-room-title">Living Room</h3>
+            <p id="modal-room-copy">Live electricity usage inside this room.</p>
+          </div>
+          <button type="button" class="ghost-button" data-close-modal="true">Close</button>
+        </div>
+        <div id="modal-room-metrics" class="mini-grid"></div>
+        <div id="modal-room-devices" class="list-stack"></div>
+      </div>
+    </div>
+
+    <script src="./app-config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
+
+
