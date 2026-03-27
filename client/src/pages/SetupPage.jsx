@@ -6,6 +6,7 @@ import MetricCard from "../components/MetricCard";
 import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
+  createAllDefaultRooms,
   createDefaultFloors,
   filterDevicesByFloor,
   filterRoomsByFloor,
@@ -13,7 +14,6 @@ import {
   getFloorById,
   getPreferredFloorId,
   MIN_ROOM_SIZE,
-  ROOM_LIBRARY,
   calculateFloorStats,
   calculateRoomStats,
   canPlaceRoom,
@@ -34,6 +34,7 @@ import {
   snapToGrid,
   syncTodayHistory,
 } from "../utils/energy";
+import { getAiSuggestions, getPlaceConfig, getRoomLibrary as getPlaceRoomLibrary, normalizePlaceType } from "../utils/placeProfiles";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value || 0);
@@ -65,8 +66,12 @@ function pxRectToStyle(candidate) {
 
 export default function SetupPage({ session, onLogout, onSetupComplete, onSettingsChange }) {
   const navigate = useNavigate();
+  const placeType = normalizePlaceType(session?.user?.placeType || session?.settings?.placeType);
+  const placeConfig = getPlaceConfig(placeType);
+  const roomLibrary = useMemo(() => getPlaceRoomLibrary(placeType), [placeType]);
+  const aiSuggestions = useMemo(() => getAiSuggestions(placeType), [placeType]);
   const initialTheme = session?.settings?.darkMode === false ? "light" : "dark";
-  const initialLimit = session?.settings?.dailyLimit || 28;
+  const initialLimit = session?.settings?.dailyLimit || placeConfig.dailyLimit;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,16 +80,16 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const [step, setStep] = useState(1);
   const [theme, setTheme] = useState(initialTheme);
   const [dailyLimit, setDailyLimit] = useState(initialLimit);
-  const [gridSize, setGridSize] = useState(20);
-  const [roomType, setRoomType] = useState("living");
-  const [customRoomName, setCustomRoomName] = useState("Study");
-  const [floors, setFloors] = useState(() => createDefaultFloors());
-  const [activeFloorId, setActiveFloorId] = useState("floor-1");
+  const [gridSize, setGridSize] = useState(session?.settings?.gridSize || placeConfig.gridSize);
+  const [roomType, setRoomType] = useState(roomLibrary[0]?.key || "custom");
+  const [customRoomName, setCustomRoomName] = useState("Innovation Room");
+  const [floors, setFloors] = useState(() => createDefaultFloors(placeType));
+  const [activeFloorId, setActiveFloorId] = useState(createDefaultFloors(placeType)[0]?.id || "floor-1");
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState(null);
-  const [metrics, setMetrics] = useState(() => computeMetrics([], null, initialLimit));
-  const [dailyHistory, setDailyHistory] = useState(() => createInitialHistory(0));
+  const [metrics, setMetrics] = useState(() => computeMetrics([], null, initialLimit, placeType));
+  const [dailyHistory, setDailyHistory] = useState(() => createInitialHistory(0, placeType));
 
   const boardRef = useRef(null);
   const previewRef = useRef(null);
@@ -104,7 +109,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const activeRooms = useMemo(() => filterRoomsByFloor(rooms, activeFloorId), [rooms, activeFloorId]);
   const activeDevices = useMemo(() => filterDevicesByFloor(devices, activeFloorId), [devices, activeFloorId]);
   const roomStats = useMemo(() => calculateRoomStats(activeRooms, activeDevices), [activeRooms, activeDevices]);
-  const floorStats = useMemo(() => calculateFloorStats(floors, rooms, devices), [floors, rooms, devices]);
+  const floorStats = useMemo(() => calculateFloorStats(floors, rooms, devices, placeType), [floors, rooms, devices, placeType]);
   const activeFloor = useMemo(() => getFloorById(floors, activeFloorId) || floorStats[0] || null, [floors, activeFloorId, floorStats]);
   const activeFloorData = useMemo(() => floorStats.find((floor) => floor.id === activeFloorId) || floorStats[0] || null, [floorStats, activeFloorId]);
   const selectedRoom = useMemo(() => getRoomById(roomStats, selectedRoomId), [roomStats, selectedRoomId]);
@@ -123,14 +128,17 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       try {
         const data = await api.getLayout(session.token);
         if (ignore) return;
-        const nextRooms = normalizeRooms(data.rooms, data.appliances || data.devices);
+        const loadedRooms = normalizeRooms(data.rooms, data.appliances || data.devices, placeType);
+        const nextRooms = loadedRooms.length ? loadedRooms : createAllDefaultRooms(placeType);
         const nextDevices = mergeSavedAppliances(data.appliances || data.devices, nextRooms, {
-          preferDefaultsWhenMissing: Boolean(data.setupCompleted),
-        });
-        const nextFloors = normalizeFloors(data.floors, nextRooms, nextDevices);
+          preferDefaultsWhenMissing: true,
+        }, placeType);
+        const nextFloors = normalizeFloors(data.floors, nextRooms, nextDevices, placeType);
         const nextLimit = data.settings?.dailyLimit || initialLimit;
-        const nextMetrics = data.metrics?.todayUsage ? data.metrics : computeMetrics(nextDevices, null, nextLimit);
-        const nextHistory = data.dailyHistory?.length ? data.dailyHistory.slice(-14) : createInitialHistory(nextMetrics.todayUsage);
+        const nextMetrics = data.metrics?.todayUsage
+          ? { ...data.metrics, simulationMode: data.metrics?.simulationMode || placeConfig.simulationMode }
+          : computeMetrics(nextDevices, null, nextLimit, placeType);
+        const nextHistory = data.dailyHistory?.length ? data.dailyHistory.slice(-14) : createInitialHistory(nextMetrics.todayUsage, placeType);
         const nextFloorId = getPreferredFloorId(nextFloors, nextRooms, nextDevices);
 
         setFloors(nextFloors);
@@ -140,6 +148,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         setDailyHistory(syncTodayHistory(nextHistory, nextMetrics.todayUsage));
         setDailyLimit(nextLimit);
         setTheme(data.settings?.darkMode === false ? "light" : "dark");
+        setGridSize(data.settings?.gridSize || placeConfig.gridSize);
         setActiveFloorId(nextFloorId);
         setSelectedRoomId(nextRooms.find((room) => room.floorId === nextFloorId)?.id || null);
       } catch (loadError) {
@@ -151,22 +160,22 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
 
     loadLayout();
     return () => { ignore = true; };
-  }, [session.token, initialLimit]);
+  }, [session.token, initialLimit, placeType, placeConfig.gridSize, placeConfig.simulationMode]);
 
   useEffect(() => {
     document.body.classList.toggle("theme-dark", theme === "dark");
     document.body.classList.toggle("theme-light", theme !== "dark");
-    onSettingsChange({ darkMode: theme === "dark", dailyLimit });
-  }, [theme, dailyLimit, onSettingsChange]);
+    onSettingsChange({ darkMode: theme === "dark", dailyLimit, placeType, gridSize, simulationMode: placeConfig.simulationMode });
+  }, [theme, dailyLimit, placeType, gridSize, placeConfig.simulationMode, onSettingsChange]);
 
   useEffect(() => {
     if (loading) return;
     setMetrics((previous) => {
-      const nextMetrics = computeMetrics(devices, previous, dailyLimit);
+      const nextMetrics = computeMetrics(devices, previous, dailyLimit, placeType);
       setDailyHistory((history) => syncTodayHistory(history, nextMetrics.todayUsage));
       return nextMetrics;
     });
-  }, [devices, dailyLimit, loading]);
+  }, [devices, dailyLimit, loading, placeType]);
 
   useEffect(() => {
     if (!activeRooms.length) {
@@ -334,7 +343,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       if (interaction.type === "draw" && candidate && valid) {
         const baseName = roomTypeRef.current === "custom"
           ? customRoomNameRef.current || "Custom Room"
-          : ROOM_LIBRARY.find((item) => item.key === roomTypeRef.current)?.label || "Room";
+          : roomLibrary.find((item) => item.key === roomTypeRef.current)?.label || "Room";
         const nextRoom = createRoom({
           floorId: activeFloorRef.current,
           type: roomTypeRef.current,
@@ -469,7 +478,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   function handleAddDevice(roomId, type) {
     const room = activeRooms.find((item) => item.id === roomId);
     if (!room) return setMessage(`Please select a room on ${activeFloor?.name || "this floor"} first`);
-    const allowedDevices = getAllowedDeviceLibrary(room);
+    const allowedDevices = getAllowedDeviceLibrary(room, placeType);
     const template = allowedDevices.find((item) => item.type === type);
     if (!template) return setMessage(`${room.name} does not support that device.`);
     const count = activeDevices.filter((device) => device.roomId === roomId && device.type === type).length;
@@ -531,6 +540,53 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     const watts = Math.max(10, Number(value) || 0);
     setDevices((current) => current.map((device) => (device.deviceId === deviceId ? { ...device, watts, highUsage: watts >= 1000 } : device)));
   }
+  function handleApplySuggestion(suggestion) {
+    const orderedRooms = [
+      ...activeRooms,
+      ...rooms.filter((room) => !activeRooms.some((activeRoom) => activeRoom.id === room.id)),
+    ];
+    const room = orderedRooms.find((candidate) =>
+      (suggestion.roomKeywords || []).some((keyword) =>
+        String(candidate.type || "").toLowerCase().includes(keyword) ||
+        String(candidate.name || "").toLowerCase().includes(keyword)
+      )
+    ) || orderedRooms[0];
+
+    if (!room) {
+      setMessage(`Add a room in your ${placeConfig.label.toLowerCase()} layout first.`);
+      setStep(1);
+      return;
+    }
+
+    const allowedDevices = getAllowedDeviceLibrary(room, placeType);
+    const template = allowedDevices.find((device) => device.type === suggestion.deviceType);
+    if (!template) {
+      setMessage(`${room.name} does not support ${suggestion.deviceType}.`);
+      return;
+    }
+
+    const roomDeviceCount = devices.filter((device) => device.roomId === room.id).length;
+    const sameTypeCount = devices.filter((device) => device.roomId === room.id && device.type === template.type).length;
+    const nextDevice = createDevice(
+      {
+        floorId: room.floorId,
+        roomId: room.id,
+        room: room.name,
+        name: sameTypeCount ? `${template.name} ${sameTypeCount + 1}` : template.name,
+        type: template.type,
+        watts: template.watts,
+        dailyHours: template.dailyHours,
+        on: template.type !== "generator",
+      },
+      roomDeviceCount
+    );
+
+    setDevices((current) => [...current, nextDevice]);
+    setActiveFloorId(room.floorId);
+    setSelectedRoomId(room.id);
+    setStep(2);
+    setMessage(`${nextDevice.name} added to ${room.name} from the AI recommendation engine.`);
+  }
 
   async function handleSave() {
     if (!rooms.length) {
@@ -542,7 +598,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     setSaving(true);
     setError("");
     try {
-      const finalMetrics = computeMetrics(devices, metrics, dailyLimit);
+      const finalMetrics = computeMetrics(devices, metrics, dailyLimit, placeType);
       const finalHistory = syncTodayHistory(dailyHistory, finalMetrics.todayUsage);
       setMetrics(finalMetrics);
       setDailyHistory(finalHistory);
@@ -552,10 +608,10 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         appliances: serializeAppliances(devices),
         metrics: finalMetrics,
         dailyHistory: finalHistory,
-        settings: { dailyLimit, darkMode: theme === "dark" },
+        settings: { dailyLimit, darkMode: theme === "dark", placeType, gridSize, simulationMode: placeConfig.simulationMode },
         setupCompleted: true,
       });
-      onSetupComplete({ settings: { dailyLimit, darkMode: theme === "dark" } });
+      onSetupComplete({ settings: { dailyLimit, darkMode: theme === "dark", placeType, gridSize, simulationMode: placeConfig.simulationMode } });
       navigate("/dashboard", { replace: true });
     } catch (saveError) {
       setError(saveError.message || "Unable to save layout.");
@@ -564,21 +620,22 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     }
   }
 
+  const limitMax = placeType === "industry" ? 800 : placeType === "school" ? 250 : placeType === "office" ? 180 : 60;
   const gridStyle = {
     "--grid-step-x": `${(gridSize / BOARD_WIDTH) * 100}%`,
     "--grid-step-y": `${(gridSize / BOARD_HEIGHT) * 100}%`,
   };
   const selectedRoomDevices = activeDevices.filter((device) => device.roomId === selectedRoomId);
-  const availableDevices = selectedRoom ? getAllowedDeviceLibrary(selectedRoom) : [];
+  const availableDevices = selectedRoom ? getAllowedDeviceLibrary(selectedRoom, placeType) : [];
 
   return (
     <div className="setup-layout">
       <div className="setup-shell">
         <header className="panel setup-topbar">
           <div>
-            <span className="section-tag">First-time setup</span>
-            <h2>Build your smart house map</h2>
-            <p>Create rooms, place appliances, and save a realistic multi-floor smart home layout before opening the dashboard.</p>
+            <span className="section-tag">AI-assisted layout editor</span>
+            <h2>{placeConfig.label} energy blueprint</h2>
+            <p>AI already prepared the floors, rooms, and device mix for this {placeConfig.label.toLowerCase()} setup. Fine-tune the layout, then sync it back to the live dashboard.</p>
           </div>
           <div className="topbar-actions">
             <button type="button" className="ghost-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "Light mode" : "Dark mode"}</button>
@@ -641,7 +698,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
             </div>
             <div className="grid-preset-row">
               {[10, 20, 40].map((size) => (
-                <button key={size} type="button" className={`grid-preset-button ${gridSize === size ? "active" : ""}`} onClick={() => setGridSize(size)}>{size}px grid</button>
+                <button key={size} type="button" className={`grid-preset-button ${gridSize === size ? "active" : ""}`} onClick={() => setGridSize(size)}>{size}px grid {size === placeConfig.gridSize ? "(AI default)" : ""}</button>
               ))}
             </div>
             <div className="setup-floor-stats">
@@ -653,7 +710,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
               <div ref={boardRef} className="blueprint-board builder" style={gridStyle} onPointerDown={handleBoardPointerDown}>
                 <div className="blueprint-grid-meta">
                   <strong>{BOARD_WIDTH}px x {BOARD_HEIGHT}px</strong>
-                  <span>{activeFloor?.name || "Floor"} | Snap-to-grid {gridSize}px</span>
+                  <span>{activeFloor?.name || "Floor"} | {placeConfig.label} {gridSize}px smart grid</span>
                 </div>
                 {!roomStats.length ? (
                   <div className="blueprint-empty">
@@ -728,7 +785,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
                   </div>
                 </div>
                 <div className="palette-grid">
-                  {ROOM_LIBRARY.map((item) => (
+                  {roomLibrary.map((item) => (
                     <button key={item.key} type="button" className={`room-type-button ${roomType === item.key ? "active" : ""}`} onClick={() => setRoomType(item.key)}>{item.label}</button>
                   ))}
                 </div>
@@ -802,6 +859,15 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
                 <div className="builder-note">
                   {selectedRoom ? `Selected room: ${selectedRoom.name}. Drag existing devices to reposition them inside ${activeFloor?.name || "this floor"}.` : `Select a room on ${activeFloor?.name || "this floor"} to add devices.`}
                 </div>
+                <div className="room-line-list">
+                  {aiSuggestions.map((suggestion) => (
+                    <article key={suggestion.id} className="setup-inline-card ai-suggestion-card">
+                      <strong>{suggestion.title}</strong>
+                      <span>{suggestion.detail}</span>
+                      <button type="button" className="ghost-button" onClick={() => handleApplySuggestion(suggestion)}>Apply suggestion</button>
+                    </article>
+                  ))}
+                </div>
                 <div className="setup-device-list">
                   {selectedRoomDevices.length ? selectedRoomDevices.map((device) => (
                     <article key={device.deviceId} className="setup-device-row">
@@ -836,10 +902,10 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
                   </div>
                 </div>
                 <div className="setup-summary-grid">
-                  <MetricCard label="Floors" value={floors.length} note="Connected in the house map" />
+                  <MetricCard label="Floors" value={floors.length} note={`${placeConfig.label} footprint`} />
                   <MetricCard label="Rooms" value={rooms.length} note="Saved across all floors" />
                   <MetricCard label="Devices" value={devices.length} note="Placed across rooms" />
-                  <MetricCard label="Est. bill" value={formatCurrency(metrics.billEstimate)} note="Based on current device mix" />
+                  <MetricCard label="AI mode" value={placeConfig.label} note={placeConfig.simulationMode} />
                 </div>
                 <div className="room-line-list">
                   {floorStats.map((floor) => (
@@ -864,7 +930,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
                 </div>
                 <label className="settings-control">
                   <span>Daily usage limit</span>
-                  <input type="range" min="10" max="60" value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
+                  <input type="range" min="10" max={limitMax} value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
                   <strong>{dailyLimit} kWh</strong>
                 </label>
               </div>

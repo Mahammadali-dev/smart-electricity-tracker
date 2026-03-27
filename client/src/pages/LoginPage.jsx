@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../utils/api";
 
@@ -32,25 +32,25 @@ export default function LoginPage({ onSuccess }) {
   return (
     <div className="auth-shell">
       <section className="auth-hero">
-        <span className="section-tag">Smart electricity usage tracker</span>
-        <h1>Monitor live power, control appliances, and reduce wasted energy.</h1>
+        <span className="section-tag">Smart electricity management</span>
+        <h1>Monitor live power, control every floor, and let AI shape the energy system around your place type.</h1>
         <p>
-          A full-stack smart home dashboard with IoT-style telemetry, room-wise controls, bill estimation,
-          alerts, and secure JWT authentication.
+          Home, school, office, and industrial profiles each get a tailored multi-floor layout, smart device mix,
+          peak-hour simulation, and live alerts from one secure dashboard.
         </p>
 
         <div className="auth-points">
           <article className="panel mini-panel">
-            <strong>Live monitoring</strong>
-            <span>kWh, voltage, current, and peak-hour alerts.</span>
+            <strong>AI-assisted layout</strong>
+            <span>Auto-generated rooms, floors, and device suggestions appear as soon as you sign up.</span>
           </article>
           <article className="panel mini-panel">
-            <strong>Top-view house map</strong>
-            <span>Control room appliances and inspect demand instantly.</span>
+            <strong>Realtime simulation</strong>
+            <span>kWh, voltage, current, spikes, and peak-hour behavior refresh continuously.</span>
           </article>
           <article className="panel mini-panel">
             <strong>Persistent backend</strong>
-            <span>Device states and daily usage history stay saved to MongoDB.</span>
+            <span>Layouts, device states, and daily usage stay synced to MongoDB Atlas.</span>
           </article>
         </div>
       </section>
@@ -60,7 +60,7 @@ export default function LoginPage({ onSuccess }) {
           <div>
             <span className="section-tag">Login</span>
             <h2>Welcome back</h2>
-            <p>Sign in to continue to your energy dashboard.</p>
+            <p>Sign in to continue to your intelligent energy dashboard.</p>
           </div>
         </div>
 

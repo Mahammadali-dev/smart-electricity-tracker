@@ -61,6 +61,8 @@ const metricsSchema = new mongoose.Schema(
     lowVoltage: { type: Boolean, default: false },
     overLimit: { type: Boolean, default: false },
     peakHour: { type: Boolean, default: false },
+    unusualSpike: { type: Boolean, default: false },
+    simulationMode: { type: String, default: "Residential AI balance" },
     lastSyncedAt: { type: Date, default: Date.now },
   },
   { _id: false }
@@ -70,6 +72,9 @@ const settingsSchema = new mongoose.Schema(
   {
     dailyLimit: { type: Number, default: 28 },
     darkMode: { type: Boolean, default: true },
+    placeType: { type: String, default: "home" },
+    gridSize: { type: Number, default: 10 },
+    simulationMode: { type: String, default: "Residential AI balance" },
   },
   { _id: false }
 );
@@ -91,7 +96,6 @@ const usageProfileSchema = new mongoose.Schema(
       default: [
         { id: "floor-1", name: "Floor 1" },
         { id: "floor-2", name: "Floor 2" },
-        { id: "floor-3", name: "Floor 3" },
       ],
     },
     rooms: {

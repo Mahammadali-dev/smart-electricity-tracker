@@ -12,13 +12,15 @@ import {
   calculateFloorStats,
   calculateRoomStats,
   computeMetrics,
+  createAllDefaultRooms,
   createDefaultAppliances,
   createDefaultFloors,
-  createDefaultRooms,
+  createDevice,
   createInitialHistory,
   deviceStyle,
   filterDevicesByFloor,
   filterRoomsByFloor,
+  getAllowedDeviceLibrary,
   getFloorById,
   getPreferredFloorId,
   getRoomById,
@@ -31,6 +33,7 @@ import {
   serializeRooms,
   syncTodayHistory,
 } from "../utils/energy";
+import { getAiSuggestions, getPlaceConfig, normalizePlaceType } from "../utils/placeProfiles";
 
 const notificationDefaults = {
   usageLimit: true,
@@ -106,12 +109,17 @@ function RoomModal({ room, onClose }) {
 
 export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   const navigate = useNavigate();
-  const initialLimit = session?.settings?.dailyLimit || 28;
+  const placeType = normalizePlaceType(session?.user?.placeType || session?.settings?.placeType);
+  const placeConfig = getPlaceConfig(placeType);
+  const aiSuggestions = getAiSuggestions(placeType);
+  const initialLimit = session?.settings?.dailyLimit || placeConfig.dailyLimit;
   const initialTheme = session?.settings?.darkMode === false ? "light" : "dark";
-  const initialFloors = createDefaultFloors();
-  const initialRooms = createDefaultRooms("floor-1");
-  const initialAppliances = createDefaultAppliances(initialRooms);
-  const initialMetrics = computeMetrics(initialAppliances, null, initialLimit);
+  const initialGridSize = session?.settings?.gridSize || placeConfig.gridSize;
+  const initialSimulationMode = session?.settings?.simulationMode || placeConfig.simulationMode;
+  const initialFloors = createDefaultFloors(placeType);
+  const initialRooms = createAllDefaultRooms(placeType);
+  const initialAppliances = createDefaultAppliances(initialRooms, placeType);
+  const initialMetrics = computeMetrics(initialAppliances, null, initialLimit, placeType);
 
   const [activeTab, setActiveTab] = useState("home");
   const [floors, setFloors] = useState(initialFloors);
@@ -120,8 +128,10 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   const [appliances, setAppliances] = useState(initialAppliances);
   const [dailyLimit, setDailyLimit] = useState(initialLimit);
   const [theme, setTheme] = useState(initialTheme);
+  const [gridSize, setGridSize] = useState(initialGridSize);
+  const [simulationMode, setSimulationMode] = useState(initialSimulationMode);
   const [metrics, setMetrics] = useState(initialMetrics);
-  const [dailyHistory, setDailyHistory] = useState(createInitialHistory(initialMetrics.todayUsage));
+  const [dailyHistory, setDailyHistory] = useState(createInitialHistory(initialMetrics.todayUsage, placeType));
   const [notificationPrefs, setNotificationPrefs] = useState(notificationDefaults);
   const [selectedRoomId, setSelectedRoomId] = useState(initialRooms[0]?.id || null);
   const [roomModal, setRoomModal] = useState(null);
@@ -133,15 +143,15 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   const activeAppliances = useMemo(() => filterDevicesByFloor(appliances, activeFloorId), [appliances, activeFloorId]);
   const roomStats = useMemo(() => calculateRoomStats(activeRooms, activeAppliances), [activeRooms, activeAppliances]);
   const allRoomStats = useMemo(() => calculateRoomStats(rooms, appliances), [rooms, appliances]);
-  const floorStats = useMemo(() => calculateFloorStats(floors, rooms, appliances), [floors, rooms, appliances]);
+  const floorStats = useMemo(() => calculateFloorStats(floors, rooms, appliances, placeType), [floors, rooms, appliances, placeType]);
   const activeFloor = useMemo(() => getFloorById(floors, activeFloorId) || floorStats[0] || null, [floors, activeFloorId, floorStats]);
   const activeFloorData = useMemo(() => floorStats.find((floor) => floor.id === activeFloorId) || floorStats[0] || null, [floorStats, activeFloorId]);
   const selectedRoomData = useMemo(() => getRoomById(roomStats, selectedRoomId), [roomStats, selectedRoomId]);
-  const alerts = useMemo(() => buildAlerts(metrics, allRoomStats, dailyLimit).filter((alert) => notificationPrefs.usageLimit || alert.tone !== "danger"), [metrics, allRoomStats, dailyLimit, notificationPrefs.usageLimit]);
-  const dailyTrend = useMemo(() => buildTrendSeries("daily", metrics, dailyHistory), [metrics, dailyHistory]);
-  const weeklyTrend = useMemo(() => buildTrendSeries("weekly", metrics, dailyHistory), [metrics, dailyHistory]);
-  const monthlyTrend = useMemo(() => buildTrendSeries("monthly", metrics, dailyHistory), [metrics, dailyHistory]);
-  const deviceComparison = useMemo(() => buildDeviceComparison(appliances, rooms, floors), [appliances, rooms, floors]);
+  const alerts = useMemo(() => buildAlerts(metrics, allRoomStats, dailyLimit, placeType).filter((alert) => notificationPrefs.usageLimit || alert.tone !== "danger"), [metrics, allRoomStats, dailyLimit, placeType, notificationPrefs.usageLimit]);
+  const dailyTrend = useMemo(() => buildTrendSeries("daily", metrics, dailyHistory, placeType), [metrics, dailyHistory, placeType]);
+  const weeklyTrend = useMemo(() => buildTrendSeries("weekly", metrics, dailyHistory, placeType), [metrics, dailyHistory, placeType]);
+  const monthlyTrend = useMemo(() => buildTrendSeries("monthly", metrics, dailyHistory, placeType), [metrics, dailyHistory, placeType]);
+  const deviceComparison = useMemo(() => buildDeviceComparison(appliances, rooms, floors, placeType), [appliances, rooms, floors, placeType]);
   const remainingUsage = Math.max(0, dailyLimit - metrics.todayUsage);
 
   useEffect(() => {
@@ -152,28 +162,33 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
         const data = await api.getUsageData(session.token);
         if (ignore) return;
 
-        const nextRooms = normalizeRooms(data.rooms, data.appliances);
-        const seededRooms = nextRooms.length ? nextRooms : createDefaultRooms("floor-1");
+        const nextRooms = normalizeRooms(data.rooms, data.appliances, placeType);
+        const seededRooms = nextRooms.length ? nextRooms : createAllDefaultRooms(placeType);
         const seededAppliances = mergeSavedAppliances(data.appliances, seededRooms, {
           preferDefaultsWhenMissing: true,
-        });
-        const nextFloors = normalizeFloors(data.floors, seededRooms, seededAppliances);
+        }, placeType);
+        const nextFloors = normalizeFloors(data.floors, seededRooms, seededAppliances, placeType);
         const nextFloorId = getPreferredFloorId(nextFloors, seededRooms, seededAppliances);
         const nextLimit = data.settings?.dailyLimit || initialLimit;
         const nextTheme = data.settings?.darkMode === false ? "light" : initialTheme;
+        const nextGridSize = data.settings?.gridSize || initialGridSize;
+        const nextSimulationMode = data.settings?.simulationMode || placeConfig.simulationMode;
         const seededMetrics = data.latestMetrics?.todayUsage
           ? {
               ...data.latestMetrics,
               activeDevices: seededAppliances.filter((item) => item.on).length,
+              simulationMode: data.latestMetrics?.simulationMode || nextSimulationMode,
             }
-          : computeMetrics(seededAppliances, null, nextLimit);
-        const seededHistory = data.dailyHistory?.length ? data.dailyHistory.slice(-14) : createInitialHistory(seededMetrics.todayUsage);
+          : computeMetrics(seededAppliances, null, nextLimit, placeType);
+        const seededHistory = data.dailyHistory?.length ? data.dailyHistory.slice(-14) : createInitialHistory(seededMetrics.todayUsage, placeType);
 
         setFloors(nextFloors);
         setRooms(seededRooms);
         setAppliances(seededAppliances);
         setDailyLimit(nextLimit);
         setTheme(nextTheme);
+        setGridSize(nextGridSize);
+        setSimulationMode(nextSimulationMode);
         setMetrics(seededMetrics);
         setDailyHistory(syncTodayHistory(seededHistory, seededMetrics.todayUsage));
         setActiveFloorId(nextFloorId);
@@ -195,13 +210,13 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     return () => {
       ignore = true;
     };
-  }, [session.token, initialLimit, initialTheme]);
+  }, [session.token, initialLimit, initialTheme, initialGridSize, placeConfig.simulationMode, placeType]);
 
   useEffect(() => {
     document.body.classList.toggle("theme-dark", theme === "dark");
     document.body.classList.toggle("theme-light", theme !== "dark");
-    onSettingsChange({ darkMode: theme === "dark", dailyLimit });
-  }, [theme, dailyLimit, onSettingsChange]);
+    onSettingsChange({ darkMode: theme === "dark", dailyLimit, placeType, gridSize, simulationMode });
+  }, [theme, dailyLimit, placeType, gridSize, simulationMode, onSettingsChange]);
 
   useEffect(() => {
     if (!activeRooms.length) {
@@ -222,14 +237,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
 
     const intervalId = setInterval(() => {
       setMetrics((previous) => {
-        const nextMetrics = computeMetrics(appliances, previous, dailyLimit);
+        const nextMetrics = computeMetrics(appliances, previous, dailyLimit, placeType);
         setDailyHistory((history) => syncTodayHistory(history, nextMetrics.todayUsage));
         return nextMetrics;
       });
     }, 4000);
 
     return () => clearInterval(intervalId);
-  }, [appliances, dailyLimit, loading]);
+  }, [appliances, dailyLimit, loading, placeType]);
 
   useEffect(() => {
     if (loading) {
@@ -248,6 +263,9 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           settings: {
             dailyLimit,
             darkMode: theme === "dark",
+            placeType,
+            gridSize,
+            simulationMode,
           },
           setupCompleted: true,
         });
@@ -258,13 +276,13 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     }, 900);
 
     return () => clearTimeout(saveTimer);
-  }, [floors, rooms, appliances, dailyLimit, theme, dailyHistory, metrics, loading, session.token]);
+  }, [floors, rooms, appliances, dailyLimit, theme, gridSize, simulationMode, dailyHistory, metrics, loading, session.token, placeType]);
 
   function toggleAppliance(deviceId) {
     setAppliances((current) => {
       const nextAppliances = current.map((item) => (item.deviceId === deviceId ? { ...item, on: !item.on } : item));
       setMetrics((previous) => {
-        const nextMetrics = computeMetrics(nextAppliances, previous, dailyLimit);
+        const nextMetrics = computeMetrics(nextAppliances, previous, dailyLimit, placeType);
         setDailyHistory((history) => syncTodayHistory(history, nextMetrics.todayUsage));
         return nextMetrics;
       });
@@ -296,6 +314,50 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     setRoomModal(null);
   }
 
+
+  function applySuggestion(suggestion) {
+    const orderedRooms = [
+      ...activeRooms,
+      ...rooms.filter((room) => !activeRooms.some((activeRoom) => activeRoom.id === room.id)),
+    ];
+    const room = orderedRooms.find((candidate) =>
+      (suggestion.roomKeywords || []).some((keyword) =>
+        String(candidate.type || "").toLowerCase().includes(keyword) ||
+        String(candidate.name || "").toLowerCase().includes(keyword)
+      )
+    ) || orderedRooms[0];
+
+    if (!room) {
+      return;
+    }
+
+    const template = getAllowedDeviceLibrary(room).find((device) => device.type === suggestion.deviceType);
+    if (!template) {
+      return;
+    }
+
+    const roomDeviceCount = appliances.filter((device) => device.roomId === room.id).length;
+    const sameTypeCount = appliances.filter((device) => device.roomId === room.id && device.type === template.type).length;
+    const nextDevice = createDevice(
+      {
+        floorId: room.floorId,
+        roomId: room.id,
+        room: room.name,
+        name: sameTypeCount ? `${template.name} ${sameTypeCount + 1}` : template.name,
+        type: template.type,
+        watts: template.watts,
+        dailyHours: template.dailyHours,
+        on: template.type !== "generator",
+      },
+      roomDeviceCount
+    );
+
+    setAppliances((current) => [...current, nextDevice]);
+    setActiveFloorId(room.floorId);
+    setSelectedRoomId(room.id);
+    setActiveTab("devices");
+  }
+
   function renderFloorSelectorPanel() {
     return (
       <section className="panel floor-band-panel">
@@ -303,7 +365,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           <div>
             <span className="section-tag">Floor selector</span>
             <h3>{activeFloor?.name || "Floor 1"}</h3>
-            <p>Switch between floor plans to monitor the grid, room usage, and device activity for each level of the property.</p>
+            <p>Switch between {placeConfig.label.toLowerCase()} floors to inspect room load, devices, and AI-managed consumption on each level.</p>
           </div>
           <div className="status-card">
             <strong>{activeFloorData?.roomCount || 0}</strong>
@@ -422,13 +484,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
         <section className="hero-grid">
           <article className="panel hero-panel">
             <div className="hero-copy">
-              <span className="section-tag">Realtime dashboard</span>
+              <span className="section-tag">{placeConfig.label} AI simulation</span>
               <h2>{formatNumber(metrics.liveLoadKw, 2)} kW live load</h2>
-              <p>Voltage, current, daily usage, and floor-by-floor room demand are refreshed in real time from the simulated IoT meter stream.</p>
+              <p>{placeConfig.simulationMode}. Voltage, current, floor demand, and device activity are refreshed continuously from the intelligent simulation engine.</p>
             </div>
             <div className="hero-badge">
               <strong>{metrics.activeDevices}</strong>
               <span>devices active</span>
+              <small>{placeConfig.label} profile</small>
             </div>
           </article>
 
@@ -451,6 +514,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           <MetricCard label="Current" value={`${formatNumber(metrics.current, 1)} A`} note="Main supply" />
           <MetricCard label="Today" value={`${formatNumber(metrics.todayUsage, 1)} kWh`} note="Tracked today" />
           <MetricCard label="This week" value={`${formatNumber(metrics.weeklyUsage, 1)} kWh`} note="Rolling 7-day total" />
+          <MetricCard label="AI mode" value={placeConfig.label} note={simulationMode} />
+          <MetricCard label="Grid" value={`${gridSize}px`} note="Auto-selected floor planner scale" />
           <MetricCard label="This month" value={`${formatNumber(metrics.monthlyUsage, 1)} kWh`} note={formatCurrency(metrics.billEstimate)} />
           <MetricCard label="Sync" value={saveStatus} note="Backend save status" tone={saveStatus === "Offline" ? "danger" : "default"} />
         </section>
@@ -470,7 +535,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
         {renderRoomMapPanel()}
 
         <section className="content-grid two-up">
-          <ChartPanel title="Hourly load" subtitle={`Real-time demand pattern across ${activeFloor?.name || "the selected floor"}.`} data={dailyTrend} accent="teal" />
+          <ChartPanel title="Hourly load" subtitle={`Real-time demand pattern across ${activeFloor?.name || "the selected floor"}.`} data={dailyTrend} accent="amber" />
           <article className="panel alerts-panel">
             <div className="panel-head">
               <div>
@@ -494,6 +559,53 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
                   <p>No critical power alerts are active right now.</p>
                 </article>
               )}
+            </div>
+          </article>
+        </section>
+
+        <section className="content-grid two-up">
+          <article className="panel ai-panel">
+            <div className="panel-head">
+              <div>
+                <span className="section-tag">AI suggestions</span>
+                <h3>Recommended next devices</h3>
+                <p>Quick additions tailored to the {placeConfig.label.toLowerCase()} profile and current floor plan.</p>
+              </div>
+            </div>
+
+            <div className="suggestion-list">
+              {aiSuggestions.map((suggestion) => (
+                <article key={suggestion.id} className="suggestion-card">
+                  <strong>{suggestion.title}</strong>
+                  <p>{suggestion.detail}</p>
+                  <button type="button" className="ghost-button" onClick={() => applySuggestion(suggestion)}>Apply</button>
+                </article>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel ai-panel">
+            <div className="panel-head">
+              <div>
+                <span className="section-tag">Simulation mode</span>
+                <h3>{simulationMode}</h3>
+                <p>The intelligent engine adjusts live demand, peak-hour emphasis, and unusual-spike behavior for this place type automatically.</p>
+              </div>
+            </div>
+
+            <div className="tips-list">
+              <article>
+                <strong>Place profile</strong>
+                <p>{placeConfig.description}</p>
+              </article>
+              <article>
+                <strong>Automatic grid size</strong>
+                <p>{gridSize}px blueprint spacing keeps this {placeConfig.label.toLowerCase()} floor plan realistic and easy to scan.</p>
+              </article>
+              <article>
+                <strong>Persistent layout</strong>
+                <p>Every room, floor, and device change is synced to MongoDB so the same map loads after refresh.</p>
+              </article>
             </div>
           </article>
         </section>
@@ -580,8 +692,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     return (
       <div className="tab-stack">
         <section className="content-grid analytics-grid">
-          <ChartPanel title="Daily graph" subtitle="Short-interval electricity demand." data={dailyTrend} accent="teal" />
-          <ChartPanel title="Weekly graph" subtitle="Last 7 days of tracked usage." data={weeklyTrend} accent="lime" />
+          <ChartPanel title="Daily graph" subtitle="Short-interval electricity demand." data={dailyTrend} accent="amber" />
+          <ChartPanel title="Weekly graph" subtitle="Last 7 days of tracked usage." data={weeklyTrend} accent="teal" />
           <ChartPanel title="Monthly graph" subtitle="Projected monthly consumption profile." data={monthlyTrend} accent="amber" />
         </section>
 
@@ -654,14 +766,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
 
             <label className="settings-control">
               <span>Daily usage limit</span>
-              <input type="range" min="10" max="60" value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
+              <input type="range" min="10" max={placeType === "industry" ? 800 : placeType === "school" ? 250 : placeType === "office" ? 180 : 60} value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
               <strong>{dailyLimit} kWh</strong>
             </label>
 
             <button type="button" className="toggle-setting" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               <div>
                 <strong>{theme === "dark" ? "Dark mode enabled" : "Light mode enabled"}</strong>
-                <span>Toggle the app appearance across mobile and desktop layouts.</span>
+                <span>Matte black and solar amber styling stays consistent across mobile and desktop layouts.</span>
               </div>
               <span className={`theme-switch ${theme === "dark" ? "active" : ""}`}>Toggle</span>
             </button>
@@ -669,7 +781,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             <button type="button" className="toggle-setting" onClick={() => navigate("/setup")}>
               <div>
                 <strong>Edit house map</strong>
-                <span>{floors.length} floors, {rooms.length} rooms, and {appliances.length} devices saved in your custom layout.</span>
+                <span>{floors.length} floors, {rooms.length} rooms, and {appliances.length} devices saved in your {placeConfig.label.toLowerCase()} layout.</span>
               </div>
               <span className="theme-switch active">Open</span>
             </button>
@@ -746,9 +858,9 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
       <main className="dashboard-main">
         <header className="topbar panel">
           <div>
-            <span className="section-tag">Authenticated workspace</span>
-            <h2>Smart Electricity Usage Tracker</h2>
-            <p>Monitor power usage, control appliances, and analyze demand across rooms and floors in real time.</p>
+            <span className="section-tag">{placeConfig.label} AI workspace</span>
+            <h2>Smart Electricity Management</h2>
+            <p>Monitor power usage, control appliances, and analyze demand across rooms, floors, and intelligent device clusters in real time.</p>
           </div>
 
           <div className="topbar-actions">

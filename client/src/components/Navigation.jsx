@@ -10,9 +10,9 @@ export default function Navigation({ activeTab, onChange, onLogout, userName }) 
     <>
       <aside className="sidebar-nav panel">
         <div className="brand-block">
-          <span className="section-tag">Smart home control</span>
+          <span className="section-tag">AI energy control</span>
           <h1>GridSense</h1>
-          <p>Real-time electricity monitoring with IoT-aware device control.</p>
+          <p>Real-time electricity monitoring with intelligent multi-floor automation.</p>
         </div>
 
         <div className="nav-list">

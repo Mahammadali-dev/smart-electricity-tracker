@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
 import { UsageProfile } from "../models/UsageProfile.js";
 import { authenticateToken } from "../middleware/auth.js";
+import { defaultSettingsForPlace, generateAutoProfile, normalizePlaceType } from "../utils/placeAutoConfig.js";
 
 const router = express.Router();
 
@@ -13,10 +14,28 @@ function createToken(user) {
       id: user._id.toString(),
       email: user.email,
       name: user.name,
+      placeType: user.placeType || "home",
     },
     process.env.JWT_SECRET || "development-secret",
     { expiresIn: "7d" }
   );
+}
+
+function deriveNameFromEmail(email) {
+  const localPart = String(email || "user")
+    .split("@")[0]
+    .replace(/[._-]+/g, " ")
+    .trim();
+
+  if (!localPart) {
+    return "Smart User";
+  }
+
+  return localPart
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function serializeUser(user) {
@@ -24,50 +43,59 @@ function serializeUser(user) {
     id: user._id.toString(),
     name: user.name,
     email: user.email,
+    placeType: user.placeType || "home",
     createdAt: user.createdAt,
   };
 }
 
-function profileSettings(profile) {
-  return profile?.settings || { dailyLimit: 28, darkMode: true };
+function profileSettings(profile, placeType = "home") {
+  return profile?.settings || defaultSettingsForPlace(placeType);
 }
 
 function profileSetupState(profile) {
-  return Boolean(profile?.setupCompleted && Array.isArray(profile?.rooms) && profile.rooms.length);
+  return Boolean(profile?.setupCompleted);
 }
 
 router.post("/signup", async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, placeType } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Name, email, and password are required." });
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required." });
     }
 
     if (password.length < 6) {
       return res.status(400).json({ message: "Password must be at least 6 characters long." });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const normalizedPlaceType = normalizePlaceType(placeType);
+    if (!placeType) {
+      return res.status(400).json({ message: "Select your place type to continue." });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(409).json({ message: "An account with this email already exists." });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
+      name: String(name || deriveNameFromEmail(email)).trim() || deriveNameFromEmail(email),
+      email: normalizedEmail,
       password: passwordHash,
+      placeType: normalizedPlaceType,
     });
 
-    const profile = await UsageProfile.create({ user: user._id, setupCompleted: false });
+    const autoProfile = generateAutoProfile(normalizedPlaceType);
+    const profile = await UsageProfile.create({ user: user._id, ...autoProfile });
     const token = createToken(user);
 
     return res.status(201).json({
       token,
       user: serializeUser(user),
-      settings: profileSettings(profile),
-      setupCompleted: false,
+      settings: profileSettings(profile, normalizedPlaceType),
+      setupCompleted: true,
     });
   } catch (error) {
     console.error("Signup error", error);
@@ -99,7 +127,7 @@ router.post("/login", async (req, res) => {
     return res.json({
       token,
       user: serializeUser(user),
-      settings: profileSettings(profile),
+      settings: profileSettings(profile, user.placeType),
       setupCompleted: profileSetupState(profile),
     });
   } catch (error) {
@@ -118,7 +146,7 @@ router.get("/user-data", authenticateToken, async (req, res) => {
     const profile = await UsageProfile.findOne({ user: req.user.id });
     return res.json({
       user: serializeUser(user),
-      settings: profileSettings(profile),
+      settings: profileSettings(profile, user.placeType),
       setupCompleted: profileSetupState(profile),
     });
   } catch (error) {

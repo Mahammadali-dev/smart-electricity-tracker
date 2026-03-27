@@ -1,12 +1,12 @@
 import express from "express";
 import { authenticateToken } from "../middleware/auth.js";
 import { UsageProfile } from "../models/UsageProfile.js";
+import { defaultSettingsForPlace, normalizePlaceType } from "../utils/placeAutoConfig.js";
 
 const router = express.Router();
 const DEFAULT_FLOORS = [
   { id: "floor-1", name: "Floor 1" },
   { id: "floor-2", name: "Floor 2" },
-  { id: "floor-3", name: "Floor 3" },
 ];
 
 function clamp(value, min, max) {
@@ -18,15 +18,16 @@ function ensureFloorId(value) {
 }
 
 function sanitizeFloors(floors = []) {
-  const merged = Object.fromEntries(DEFAULT_FLOORS.map((floor) => [floor.id, { ...floor }]));
+  const fallback = Object.fromEntries(DEFAULT_FLOORS.map((floor) => [floor.id, { ...floor }]));
   floors.forEach((floor) => {
     const floorId = ensureFloorId(floor?.id);
-    merged[floorId] = {
+    fallback[floorId] = {
       id: floorId,
-      name: String(floor?.name || merged[floorId]?.name || `Floor ${floorId.replace(/[^0-9]/g, "") || 1}`).trim() || merged[floorId]?.name || "Floor 1",
+      name: String(floor?.name || fallback[floorId]?.name || `Floor ${floorId.replace(/[^0-9]/g, "") || 1}`).trim() || fallback[floorId]?.name || "Floor 1",
     };
   });
-  return Object.values(merged).sort((left, right) => {
+
+  return Object.values(fallback).sort((left, right) => {
     const leftNumber = Number(left.id.replace(/[^0-9]/g, "")) || 0;
     const rightNumber = Number(right.id.replace(/[^0-9]/g, "")) || 0;
     return leftNumber - rightNumber;
@@ -94,18 +95,26 @@ function sanitizeMetrics(metrics = {}) {
     lowVoltage: Boolean(metrics.lowVoltage),
     overLimit: Boolean(metrics.overLimit),
     peakHour: Boolean(metrics.peakHour),
+    unusualSpike: Boolean(metrics.unusualSpike),
+    simulationMode: String(metrics.simulationMode || "Residential AI balance"),
     lastSyncedAt: metrics.lastSyncedAt || new Date(),
   };
 }
 
 function sanitizeSettings(settings = {}) {
+  const placeType = normalizePlaceType(settings.placeType);
+  const fallback = defaultSettingsForPlace(placeType);
   return {
-    dailyLimit: Number(settings.dailyLimit) || 28,
+    dailyLimit: Number(settings.dailyLimit) || fallback.dailyLimit,
     darkMode: settings.darkMode !== false,
+    placeType,
+    gridSize: [10, 20, 40].includes(Number(settings.gridSize)) ? Number(settings.gridSize) : fallback.gridSize,
+    simulationMode: String(settings.simulationMode || fallback.simulationMode),
   };
 }
 
-function defaultPayload() {
+function defaultPayload(placeType = "home") {
+  const settings = defaultSettingsForPlace(placeType);
   return {
     setupCompleted: false,
     floors: DEFAULT_FLOORS,
@@ -121,14 +130,13 @@ function defaultPayload() {
       lowVoltage: false,
       overLimit: false,
       peakHour: false,
+      unusualSpike: false,
+      simulationMode: settings.simulationMode,
       lastSyncedAt: new Date(),
     },
     appliances: [],
     dailyHistory: [],
-    settings: {
-      dailyLimit: 28,
-      darkMode: true,
-    },
+    settings,
   };
 }
 
@@ -136,6 +144,7 @@ router.post("/save-usage", authenticateToken, async (req, res) => {
   try {
     const rooms = sanitizeRooms(req.body.rooms);
     const appliances = sanitizeAppliances(req.body.appliances);
+    const settings = sanitizeSettings(req.body.settings);
 
     const profile = await UsageProfile.findOneAndUpdate(
       { user: req.user.id },
@@ -146,7 +155,7 @@ router.post("/save-usage", authenticateToken, async (req, res) => {
           appliances,
           rooms,
           dailyHistory: sanitizeHistory(req.body.dailyHistory),
-          settings: sanitizeSettings(req.body.settings),
+          settings,
           setupCompleted: Boolean(req.body.setupCompleted) || rooms.length > 0,
         },
       },
@@ -167,7 +176,7 @@ router.post("/save-usage", authenticateToken, async (req, res) => {
 router.get("/usage-data", authenticateToken, async (req, res) => {
   try {
     const profile = await UsageProfile.findOne({ user: req.user.id });
-    return res.json(profile || defaultPayload());
+    return res.json(profile || defaultPayload(req.user.placeType));
   } catch (error) {
     console.error("Usage data error", error);
     return res.status(500).json({ message: "Unable to load usage data." });
@@ -178,6 +187,7 @@ router.post("/save-layout", authenticateToken, async (req, res) => {
   try {
     const rooms = sanitizeRooms(req.body.rooms);
     const appliances = sanitizeAppliances(req.body.appliances || req.body.devices);
+    const settings = sanitizeSettings(req.body.settings);
 
     const profile = await UsageProfile.findOneAndUpdate(
       { user: req.user.id },
@@ -188,7 +198,7 @@ router.post("/save-layout", authenticateToken, async (req, res) => {
           appliances,
           latestMetrics: sanitizeMetrics(req.body.metrics),
           dailyHistory: sanitizeHistory(req.body.dailyHistory),
-          settings: sanitizeSettings(req.body.settings),
+          settings,
           setupCompleted: rooms.length > 0,
         },
       },
@@ -225,8 +235,8 @@ router.get("/get-layout", authenticateToken, async (req, res) => {
       devices: profile?.appliances || [],
       appliances: profile?.appliances || [],
       setupCompleted: Boolean(profile?.setupCompleted),
-      settings: profile?.settings || { dailyLimit: 28, darkMode: true },
-      metrics: profile?.latestMetrics || defaultPayload().latestMetrics,
+      settings: profile?.settings || defaultPayload(req.user.placeType).settings,
+      metrics: profile?.latestMetrics || defaultPayload(req.user.placeType).latestMetrics,
       dailyHistory: profile?.dailyHistory || [],
     });
   } catch (error) {

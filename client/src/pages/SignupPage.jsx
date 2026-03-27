@@ -1,11 +1,17 @@
-﻿import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../utils/api";
+import { PLACE_TYPE_OPTIONS } from "../utils/placeProfiles";
 
 export default function SignupPage({ onSuccess }) {
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ email: "", password: "", placeType: "home" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const selectedPlace = useMemo(
+    () => PLACE_TYPE_OPTIONS.find((item) => item.value === form.placeType) || PLACE_TYPE_OPTIONS[0],
+    [form.placeType]
+  );
 
   function updateField(event) {
     setForm((current) => ({
@@ -32,25 +38,25 @@ export default function SignupPage({ onSuccess }) {
   return (
     <div className="auth-shell">
       <section className="auth-hero">
-        <span className="section-tag">Secure onboarding</span>
-        <h1>Create your smart electricity account and start tracking usage room by room.</h1>
+        <span className="section-tag">AI-assisted setup</span>
+        <h1>Select your place type once and get a fully configured smart energy system instantly.</h1>
         <p>
-          Store appliance controls, daily history, dashboard preferences, and live monitoring settings in one
-          authenticated workspace.
+          Tesla-style automation creates the floor layout, room map, device mix, grid scale, and simulation profile for
+          your place before you even open the dashboard.
         </p>
 
         <div className="auth-points">
           <article className="panel mini-panel">
-            <strong>Multi-device control</strong>
-            <span>Fan, AC, lights, TV, and refrigerator states are saved after login.</span>
+            <strong>{selectedPlace.label} blueprint</strong>
+            <span>{selectedPlace.description}</span>
           </article>
           <article className="panel mini-panel">
-            <strong>Usage analytics</strong>
-            <span>Track hourly, weekly, and monthly patterns with bill estimation.</span>
+            <strong>{selectedPlace.gridSize}px smart grid</strong>
+            <span>{selectedPlace.simulationMode}</span>
           </article>
           <article className="panel mini-panel">
-            <strong>Responsive by design</strong>
-            <span>Mobile bottom nav and desktop sidebar are both included.</span>
+            <strong>Ready instantly</strong>
+            <span>Rooms, devices, alerts, and floors are prepared automatically after signup.</span>
           </article>
         </div>
       </section>
@@ -58,17 +64,30 @@ export default function SignupPage({ onSuccess }) {
       <section className="auth-card panel">
         <div className="panel-head stacked">
           <div>
-            <span className="section-tag">Signup</span>
+            <span className="section-tag">Smart signup</span>
             <h2>Create account</h2>
-            <p>Your password is hashed before being stored.</p>
+            <p>Pick your place type, create your login, and jump straight into the live dashboard.</p>
           </div>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
-          <label>
-            <span>Name</span>
-            <input type="text" name="name" value={form.name} onChange={updateField} placeholder="Full name" required />
-          </label>
+          <fieldset className="place-type-fieldset">
+            <legend>Select your place type</legend>
+            <div className="place-type-grid">
+              {PLACE_TYPE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`place-type-card ${form.placeType === option.value ? "active" : ""}`}
+                  onClick={() => setForm((current) => ({ ...current, placeType: option.value }))}
+                >
+                  <strong>{option.label}</strong>
+                  <span>{option.tagline}</span>
+                  <small>{option.gridSize}px grid</small>
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
           <label>
             <span>Email</span>
@@ -83,7 +102,7 @@ export default function SignupPage({ onSuccess }) {
           {error ? <div className="form-alert error">{error}</div> : null}
 
           <button type="submit" className="primary-button" disabled={submitting}>
-            {submitting ? "Creating account..." : "Signup"}
+            {submitting ? "Creating smart workspace..." : `Create ${selectedPlace.label} workspace`}
           </button>
         </form>
 

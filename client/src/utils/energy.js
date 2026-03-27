@@ -1,3 +1,17 @@
+import {
+  DEVICE_LIBRARY as PROFILE_DEVICE_LIBRARY,
+  ROOM_DEVICE_TYPES,
+  getDeviceTemplate,
+  getFloorNames,
+  getPlaceConfig,
+  getRoomDefinition,
+  getRoomLibrary as getPlaceRoomLibrary,
+  getRoomThreshold,
+  getTemplateApplianceBlueprints,
+  getTemplateRoomBlueprints,
+  normalizePlaceType,
+} from "./placeProfiles";
+
 export const BOARD_WIDTH = 480;
 export const BOARD_HEIGHT = 400;
 export const MIN_ROOM_SIZE = 80;
@@ -8,37 +22,8 @@ export const FLOOR_LIBRARY = [
   { id: "floor-3", name: "Floor 3" },
 ];
 
-export const ROOM_LIBRARY = [
-  { key: "living", label: "Living Room", threshold: 2200 },
-  { key: "bedroom", label: "Bedroom", threshold: 1800 },
-  { key: "kitchen", label: "Kitchen", threshold: 1700 },
-  { key: "bathroom", label: "Bathroom", threshold: 2400 },
-  { key: "custom", label: "Custom Room", threshold: 1600 },
-];
-
-export const DEVICE_LIBRARY = [
-  { type: "fan", name: "Fan", watts: 75, dailyHours: 8.2 },
-  { type: "ac", name: "AC", watts: 1450, dailyHours: 4.5 },
-  { type: "light", name: "Light", watts: 90, dailyHours: 6.5 },
-  { type: "tv", name: "TV", watts: 180, dailyHours: 5.2 },
-  { type: "fridge", name: "Refrigerator", watts: 220, dailyHours: 18.5 },
-  { type: "water-heater", name: "Water Heater", watts: 1800, dailyHours: 1.4 },
-];
-
-const ROOM_DEVICE_TYPES = {
-  living: ["fan", "ac", "light", "tv", "fridge"],
-  bedroom: ["fan", "ac", "light"],
-  kitchen: ["fan", "light", "fridge"],
-  bathroom: ["light", "water-heater"],
-  custom: ["fan", "ac", "light", "tv", "fridge", "water-heater"],
-};
-
-const DEFAULT_ROOM_LAYOUT = [
-  { type: "living", name: "Living Room", x: 0, y: 0, width: 280, height: 160 },
-  { type: "bedroom", name: "Bedroom", x: 280, y: 0, width: 200, height: 160 },
-  { type: "kitchen", name: "Kitchen", x: 0, y: 160, width: 240, height: 240 },
-  { type: "bathroom", name: "Bathroom", x: 240, y: 160, width: 240, height: 240 },
-];
+export const ROOM_LIBRARY = getPlaceRoomLibrary("home");
+export const DEVICE_LIBRARY = PROFILE_DEVICE_LIBRARY;
 
 const FALLBACK_LAYOUT_SLOTS = [
   { x: 0, y: 0, width: 240, height: 120 },
@@ -49,21 +34,82 @@ const FALLBACK_LAYOUT_SLOTS = [
   { x: 240, y: 260, width: 240, height: 140 },
 ];
 
-const applianceBlueprints = [
-  { floorId: "floor-1", room: "Living Room", name: "Fan", type: "fan", watts: 75, dailyHours: 8.2, on: true },
-  { floorId: "floor-1", room: "Living Room", name: "AC", type: "ac", watts: 1450, dailyHours: 4.5, on: true },
-  { floorId: "floor-1", room: "Living Room", name: "Light", type: "light", watts: 90, dailyHours: 6.5, on: true },
-  { floorId: "floor-1", room: "Living Room", name: "TV", type: "tv", watts: 180, dailyHours: 5.2, on: true },
-  { floorId: "floor-1", room: "Living Room", name: "Refrigerator", type: "fridge", watts: 220, dailyHours: 18.5, on: true },
-  { floorId: "floor-1", room: "Bedroom", name: "Fan", type: "fan", watts: 60, dailyHours: 9.0, on: true },
-  { floorId: "floor-1", room: "Bedroom", name: "AC", type: "ac", watts: 1300, dailyHours: 3.6, on: false },
-  { floorId: "floor-1", room: "Bedroom", name: "Light", type: "light", watts: 60, dailyHours: 5.0, on: true },
-  { floorId: "floor-1", room: "Kitchen", name: "Fan", type: "fan", watts: 55, dailyHours: 6.2, on: true },
-  { floorId: "floor-1", room: "Kitchen", name: "Light", type: "light", watts: 80, dailyHours: 7.0, on: true },
-  { floorId: "floor-1", room: "Kitchen", name: "Refrigerator", type: "fridge", watts: 260, dailyHours: 22.0, on: true },
-  { floorId: "floor-1", room: "Bathroom", name: "Light", type: "light", watts: 50, dailyHours: 3.3, on: true },
-  { floorId: "floor-1", room: "Bathroom", name: "Water Heater", type: "water-heater", watts: 1800, dailyHours: 1.2, on: false },
-];
+const DEVICE_PLACEMENTS = {
+  fan: [0.24, 0.34],
+  ac: [0.74, 0.28],
+  light: [0.5, 0.18],
+  tv: [0.33, 0.72],
+  fridge: [0.72, 0.72],
+  "water-heater": [0.72, 0.64],
+  projector: [0.5, 0.26],
+  computer: [0.34, 0.62],
+  "lab-equipment": [0.68, 0.66],
+  motor: [0.3, 0.58],
+  conveyor: [0.56, 0.56],
+  cnc: [0.74, 0.42],
+  compressor: [0.72, 0.74],
+  pump: [0.42, 0.74],
+  hvac: [0.78, 0.26],
+  server: [0.72, 0.42],
+  router: [0.54, 0.26],
+  generator: [0.2, 0.74],
+  "smart-plug": [0.24, 0.76],
+};
+
+const SIMULATION_PROFILES = {
+  home: {
+    standbyWatts: 36,
+    idlePerDevice: 6,
+    baseDaily: 5.6,
+    weeklyFactor: 6.5,
+    monthlyFactor: 27.1,
+    nominalVoltage: 229,
+    voltageDrop: 4.8,
+    peakHours: [18, 22],
+    tariff: 8.35,
+    lowVoltageAt: 210,
+    dailyCurve: [0.42, 0.58, 0.66, 0.74, 0.96, 1.08, 0.62],
+  },
+  school: {
+    standbyWatts: 90,
+    idlePerDevice: 10,
+    baseDaily: 18,
+    weeklyFactor: 5.4,
+    monthlyFactor: 22.2,
+    nominalVoltage: 228,
+    voltageDrop: 5.4,
+    peakHours: [10, 15],
+    tariff: 9.1,
+    lowVoltageAt: 208,
+    dailyCurve: [0.2, 0.82, 1.04, 1.08, 0.88, 0.3, 0.12],
+  },
+  industry: {
+    standbyWatts: 240,
+    idlePerDevice: 28,
+    baseDaily: 72,
+    weeklyFactor: 6.8,
+    monthlyFactor: 28.6,
+    nominalVoltage: 226,
+    voltageDrop: 6.6,
+    peakHours: [12, 19],
+    tariff: 11.8,
+    lowVoltageAt: 205,
+    dailyCurve: [0.88, 1.02, 1.08, 1.16, 1.22, 1.1, 0.92],
+  },
+  office: {
+    standbyWatts: 78,
+    idlePerDevice: 9,
+    baseDaily: 15,
+    weeklyFactor: 5.8,
+    monthlyFactor: 23.8,
+    nominalVoltage: 229,
+    voltageDrop: 5.2,
+    peakHours: [9, 18],
+    tariff: 9.8,
+    lowVoltageAt: 209,
+    dailyCurve: [0.22, 0.76, 0.98, 1.06, 0.9, 0.42, 0.16],
+  },
+};
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -86,24 +132,44 @@ function sortFloorIds(left, right) {
   return leftNumber - rightNumber;
 }
 
-function defaultFloorName(floorId) {
-  const known = FLOOR_LIBRARY.find((floor) => floor.id === floorId);
-  if (known) {
-    return known.name;
+function ensureFloorId(value) {
+  return String(value || "floor-1").trim().toLowerCase() || "floor-1";
+}
+
+function defaultFloorName(floorId, placeType = "home") {
+  const normalizedType = normalizePlaceType(placeType);
+  const match = createDefaultFloors(normalizedType).find((floor) => floor.id === ensureFloorId(floorId));
+  if (match) {
+    return match.name;
   }
 
   const number = Number(String(floorId).replace(/[^0-9]/g, "")) || 1;
-  return `Floor ${number}`;
+  return normalizedType === "industry" ? `Section ${number}` : `Floor ${number}`;
 }
 
-function ensureFloorId(value) {
-  const next = String(value || "floor-1").trim() || "floor-1";
-  return next.toLowerCase();
+function normalizeRoomTypeFromName(value) {
+  const name = String(value || "").trim().toLowerCase();
+  if (!name) return "custom";
+  if (name.includes("bed")) return "bedroom";
+  if (name.includes("bath")) return "bathroom";
+  if (name.includes("kitchen")) return "kitchen";
+  if (name.includes("living")) return "living";
+  if (name.includes("class")) return "classroom";
+  if (name.includes("lab")) return "lab";
+  if (name.includes("staff")) return "staff";
+  if (name.includes("production")) return "production";
+  if (name.includes("control")) return "control";
+  if (name.includes("storage") || name.includes("utility")) return "storage";
+  if (name.includes("workspace") || name.includes("work space")) return "workspace";
+  if (name.includes("meeting") || name.includes("board")) return "meeting";
+  if (name.includes("server")) return "server";
+  if (name.includes("office")) return "office";
+  return "custom";
 }
 
 function resolveRoomType(roomOrType) {
   if (typeof roomOrType === "string") {
-    return roomOrType.toLowerCase();
+    return normalizeRoomTypeFromName(roomOrType);
   }
 
   const type = String(roomOrType?.type || "").toLowerCase();
@@ -111,41 +177,44 @@ function resolveRoomType(roomOrType) {
     return type;
   }
 
-  const name = String(roomOrType?.name || "").toLowerCase();
-  if (name.includes("bed")) return "bedroom";
-  if (name.includes("bath")) return "bathroom";
-  if (name.includes("kitchen")) return "kitchen";
-  if (name.includes("living")) return "living";
-  return "custom";
+  return normalizeRoomTypeFromName(roomOrType?.name);
 }
 
 function roomThreshold(type) {
-  return ROOM_LIBRARY.find((room) => room.key === type)?.threshold || 1600;
+  return getRoomThreshold(resolveRoomType(type));
 }
 
 function defaultRoomName(type) {
-  return ROOM_LIBRARY.find((room) => room.key === type)?.label || "Custom Room";
+  return getRoomDefinition(resolveRoomType(type)).label || "Custom Room";
 }
 
-export function createDefaultFloors() {
-  return FLOOR_LIBRARY.map((floor) => ({ ...floor }));
+export function getRoomLibrary(placeType = "home") {
+  return getPlaceRoomLibrary(placeType);
 }
 
-export function normalizeFloors(savedFloors, savedRooms = [], savedAppliances = []) {
-  const floors = Object.fromEntries(createDefaultFloors().map((floor) => [floor.id, floor]));
+export function createDefaultFloors(placeType = "home") {
+  return getFloorNames(placeType).map((name, index) => ({
+    id: `floor-${index + 1}`,
+    name,
+  }));
+}
+
+export function normalizeFloors(savedFloors, savedRooms = [], savedAppliances = [], placeType = "home") {
+  const normalizedType = normalizePlaceType(placeType);
+  const floors = Object.fromEntries(createDefaultFloors(normalizedType).map((floor) => [floor.id, floor]));
 
   (savedFloors || []).forEach((floor) => {
     const floorId = ensureFloorId(floor?.id);
     floors[floorId] = {
       id: floorId,
-      name: String(floor?.name || defaultFloorName(floorId)).trim() || defaultFloorName(floorId),
+      name: String(floor?.name || floors[floorId]?.name || defaultFloorName(floorId, normalizedType)).trim() || defaultFloorName(floorId, normalizedType),
     };
   });
 
   [...(savedRooms || []), ...(savedAppliances || [])].forEach((item) => {
     const floorId = ensureFloorId(item?.floorId);
     if (!floors[floorId]) {
-      floors[floorId] = { id: floorId, name: defaultFloorName(floorId) };
+      floors[floorId] = { id: floorId, name: defaultFloorName(floorId, normalizedType) };
     }
   });
 
@@ -197,44 +266,39 @@ export function isDeviceAllowedInRoom(roomOrType, deviceType) {
 
 function uniqueRoomName(baseName, roomList, ignoreId) {
   const taken = (roomList || []).filter((room) => room.id !== ignoreId).map((room) => room.name.toLowerCase());
-  if (!taken.includes(String(baseName).toLowerCase())) {
-    return baseName;
+  const initialName = String(baseName || "Room").trim() || "Room";
+  if (!taken.includes(initialName.toLowerCase())) {
+    return initialName;
   }
 
   let index = 2;
-  while (taken.includes(`${String(baseName).toLowerCase()} ${index}`)) {
+  while (taken.includes(`${initialName.toLowerCase()} ${index}`)) {
     index += 1;
   }
-  return `${baseName} ${index}`;
+  return `${initialName} ${index}`;
 }
 
 function toOneDecimal(value) {
-  return Number(value.toFixed(1));
+  return Number((Number(value) || 0).toFixed(1));
 }
 
 function toTwoDecimals(value) {
-  return Number(value.toFixed(2));
+  return Number((Number(value) || 0).toFixed(2));
 }
 
 function defaultDevicePlacement(type, count) {
-  const placements = {
-    fan: [0.24, 0.34],
-    ac: [0.74, 0.28],
-    light: [0.5, 0.18],
-    tv: [0.33, 0.72],
-    fridge: [0.72, 0.72],
-    "water-heater": [0.72, 0.64],
-  };
-  const fallback = placements[type] || [0.5, 0.5];
-  const nudge = Math.min(count * 0.05, 0.14);
+  const fallback = DEVICE_PLACEMENTS[type] || [0.5, 0.5];
+  const xNudge = (count % 3) * 0.05;
+  const yNudge = Math.floor(count / 3) * 0.06;
   return {
-    xPct: clamp(fallback[0] + (count % 2 ? nudge : -nudge * 0.35), 0.16, 0.84),
-    yPct: clamp(fallback[1] + (count > 1 ? nudge * 0.5 : 0), 0.18, 0.84),
+    xPct: clamp(fallback[0] + xNudge - 0.03, 0.16, 0.84),
+    yPct: clamp(fallback[1] + yNudge - 0.03, 0.18, 0.84),
   };
 }
 
 function upgradeLegacyRoomDevice(room, item) {
-  if (resolveRoomType(room) === "bathroom" && item.type === "fan") {
+  const resolvedRoomType = resolveRoomType(room);
+  if (resolvedRoomType === "bathroom" && item.type === "fan") {
     return {
       ...item,
       type: "water-heater",
@@ -271,20 +335,24 @@ export function createRoom(payload = {}) {
   };
 }
 
-export function createDefaultRooms(floorId = "floor-1") {
-  const nextFloorId = ensureFloorId(floorId);
-  if (nextFloorId !== "floor-1") {
-    return [];
-  }
-  return DEFAULT_ROOM_LAYOUT.map((item) => createRoom({ ...item, floorId: nextFloorId }));
+export function createDefaultRooms(floorId = "floor-1", placeType = "home") {
+  const normalizedFloorId = ensureFloorId(floorId);
+  return getTemplateRoomBlueprints(placeType)
+    .filter((item) => ensureFloorId(item.floorId) === normalizedFloorId)
+    .map((item) => createRoom({ ...item, floorId: normalizedFloorId }));
 }
 
-function createRoomsFromLegacyAppliances(savedAppliances) {
+export function createAllDefaultRooms(placeType = "home") {
+  return createDefaultFloors(placeType).flatMap((floor) => createDefaultRooms(floor.id, placeType));
+}
+
+function createRoomsFromLegacyAppliances(savedAppliances, placeType = "home") {
   const names = Array.from(new Set((savedAppliances || []).map((item) => String(item.room || "").trim()).filter(Boolean)));
+  const knownSlots = getTemplateRoomBlueprints(placeType);
   return names.map((name, index) => {
-    const known = DEFAULT_ROOM_LAYOUT.find((item) => item.name.toLowerCase() === name.toLowerCase());
+    const known = knownSlots.find((item) => item.name.toLowerCase() === name.toLowerCase());
     const slot = known || FALLBACK_LAYOUT_SLOTS[index % FALLBACK_LAYOUT_SLOTS.length];
-    const type = known ? known.type : "custom";
+    const type = known ? known.type : normalizeRoomTypeFromName(name);
     return createRoom({
       id: `legacy-${slugify(name)}`,
       floorId: ensureFloorId(savedAppliances?.[0]?.floorId),
@@ -299,12 +367,12 @@ function createRoomsFromLegacyAppliances(savedAppliances) {
   });
 }
 
-export function normalizeRooms(savedRooms, savedAppliances) {
+export function normalizeRooms(savedRooms, savedAppliances, placeType = "home") {
   if (Array.isArray(savedRooms) && savedRooms.length) {
     return savedRooms.map((room) => createRoom(room));
   }
   if (Array.isArray(savedAppliances) && savedAppliances.length) {
-    return createRoomsFromLegacyAppliances(savedAppliances);
+    return createRoomsFromLegacyAppliances(savedAppliances, placeType);
   }
   return [];
 }
@@ -314,14 +382,13 @@ export function renameRoom(rooms, roomId, nextName) {
   if (!room) {
     return rooms;
   }
-  const trimmed = String(nextName || "").trim();
   const sameFloorRooms = rooms.filter((item) => item.floorId === room.floorId);
-  const name = uniqueRoomName(trimmed || room.name, sameFloorRooms, roomId);
+  const name = uniqueRoomName(String(nextName || room.name).trim() || room.name, sameFloorRooms, roomId);
   return rooms.map((item) => (item.id === roomId ? { ...item, name } : item));
 }
 
 export function createDevice(payload = {}, indexInRoom = 0) {
-  const template = DEVICE_LIBRARY.find((item) => item.type === payload.type) || DEVICE_LIBRARY[0];
+  const template = getDeviceTemplate(payload.type);
   const placement = payload.xPct != null && payload.yPct != null
     ? { xPct: Number(payload.xPct), yPct: Number(payload.yPct) }
     : defaultDevicePlacement(payload.type || template.type, indexInRoom);
@@ -342,13 +409,13 @@ export function createDevice(payload = {}, indexInRoom = 0) {
   };
 }
 
-export function createDefaultAppliances(roomList = createDefaultRooms()) {
-  const roomMap = Object.fromEntries(roomList.map((room) => [`${ensureFloorId(room.floorId)}::${room.name}`, room]));
+export function createDefaultAppliances(roomList = [], placeType = "home") {
+  const roomMap = Object.fromEntries(roomList.map((room) => [`${ensureFloorId(room.floorId)}::${room.name.toLowerCase()}`, room]));
   const roomCounts = {};
 
-  return applianceBlueprints
+  return getTemplateApplianceBlueprints(placeType)
     .map((item) => {
-      const key = `${ensureFloorId(item.floorId)}::${item.room}`;
+      const key = `${ensureFloorId(item.floorId)}::${String(item.room).toLowerCase()}`;
       const room = roomMap[key];
       if (!room || !isDeviceAllowedInRoom(room, item.type)) {
         return null;
@@ -356,16 +423,16 @@ export function createDefaultAppliances(roomList = createDefaultRooms()) {
       roomCounts[room.id] = roomCounts[room.id] || 0;
       const device = createDevice(
         {
-          deviceId: `${ensureFloorId(item.floorId)}-${slugify(item.room)}-${slugify(item.name)}`,
+          deviceId: `${ensureFloorId(item.floorId)}-${slugify(item.room)}-${slugify(item.name || getDeviceTemplate(item.type).name)}`,
           floorId: room.floorId,
           roomId: room.id,
           room: room.name,
-          name: item.name,
+          name: item.name || getDeviceTemplate(item.type).name,
           type: item.type,
-          watts: item.watts,
-          dailyHours: item.dailyHours,
-          on: item.on,
-          highUsage: item.watts >= 1000,
+          watts: item.watts || getDeviceTemplate(item.type).watts,
+          dailyHours: item.dailyHours || getDeviceTemplate(item.type).dailyHours,
+          on: item.on ?? item.type !== "generator",
+          highUsage: (item.watts || getDeviceTemplate(item.type).watts) >= 1000,
         },
         roomCounts[room.id]
       );
@@ -375,10 +442,10 @@ export function createDefaultAppliances(roomList = createDefaultRooms()) {
     .filter(Boolean);
 }
 
-export function mergeSavedAppliances(savedAppliances, roomList, options = {}) {
+export function mergeSavedAppliances(savedAppliances, roomList, options = {}, placeType = "home") {
   const { preferDefaultsWhenMissing = true } = options;
   if (!Array.isArray(savedAppliances) || !savedAppliances.length) {
-    return preferDefaultsWhenMissing && roomList.length ? createDefaultAppliances(roomList) : [];
+    return preferDefaultsWhenMissing && roomList.length ? createDefaultAppliances(roomList, placeType) : [];
   }
 
   const roomById = Object.fromEntries(roomList.map((room) => [room.id, room]));
@@ -391,41 +458,46 @@ export function mergeSavedAppliances(savedAppliances, roomList, options = {}) {
       const matchedRoom =
         roomById[item.roomId] ||
         roomByName[`${preferredFloorId}::${String(item.room || "").toLowerCase()}`] ||
-        roomByName[`floor-1::${String(item.room || "").toLowerCase()}`] ||
+        roomList.find((room) => room.floorId === preferredFloorId) ||
         roomList[0] ||
         null;
+
       const upgradedItem = matchedRoom ? upgradeLegacyRoomDevice(matchedRoom, item) : item;
       if (matchedRoom && !isDeviceAllowedInRoom(matchedRoom, upgradedItem.type)) {
         return null;
       }
-      if (matchedRoom) {
-        roomCounts[matchedRoom.id] = roomCounts[matchedRoom.id] || 0;
-      }
+
+      const room = matchedRoom || {
+        id: upgradedItem.roomId,
+        floorId: preferredFloorId,
+        name: upgradedItem.room || "Room",
+        type: resolveRoomType(upgradedItem.room || upgradedItem.type),
+      };
+
+      roomCounts[room.id] = roomCounts[room.id] || 0;
       const device = createDevice(
         {
-          deviceId: upgradedItem.deviceId,
-          floorId: matchedRoom ? matchedRoom.floorId : preferredFloorId,
-          roomId: matchedRoom ? matchedRoom.id : String(upgradedItem.roomId || ""),
-          room: matchedRoom ? matchedRoom.name : String(upgradedItem.room || ""),
-          name: upgradedItem.name,
+          ...upgradedItem,
+          floorId: room.floorId,
+          roomId: room.id,
+          room: room.name,
+          name: upgradedItem.name || getDeviceTemplate(upgradedItem.type).name,
           type: upgradedItem.type,
-          watts: upgradedItem.watts,
-          dailyHours: upgradedItem.dailyHours,
-          on: upgradedItem.on,
-          highUsage: upgradedItem.highUsage,
+          watts: upgradedItem.watts || getDeviceTemplate(upgradedItem.type).watts,
+          dailyHours: upgradedItem.dailyHours || getDeviceTemplate(upgradedItem.type).dailyHours,
+          on: upgradedItem.on !== false,
+          highUsage: upgradedItem.highUsage || Number(upgradedItem.watts || getDeviceTemplate(upgradedItem.type).watts) >= 1000,
           xPct: upgradedItem.xPct,
           yPct: upgradedItem.yPct,
         },
-        matchedRoom ? roomCounts[matchedRoom.id] : 0
+        roomCounts[room.id]
       );
-      if (matchedRoom) {
-        roomCounts[matchedRoom.id] += 1;
-      }
+      roomCounts[room.id] += 1;
       return device;
     })
     .filter(Boolean);
 
-  return normalized.length || !preferDefaultsWhenMissing || !roomList.length ? normalized : createDefaultAppliances(roomList);
+  return normalized.length || !preferDefaultsWhenMissing || !roomList.length ? normalized : createDefaultAppliances(roomList, placeType);
 }
 
 export function calculateRoomStats(rooms, appliances) {
@@ -444,8 +516,8 @@ export function calculateRoomStats(rooms, appliances) {
   });
 }
 
-export function calculateFloorStats(floors, rooms, appliances) {
-  return normalizeFloors(floors, rooms, appliances).map((floor) => {
+export function calculateFloorStats(floors, rooms, appliances, placeType = "home") {
+  return normalizeFloors(floors, rooms, appliances, placeType).map((floor) => {
     const floorRooms = filterRoomsByFloor(rooms, floor.id);
     const floorDevices = filterDevicesByFloor(appliances, floor.id);
     const roomStats = calculateRoomStats(floorRooms, floorDevices);
@@ -471,24 +543,128 @@ export function getRoomById(roomStats, roomId) {
   return roomStats.find((room) => room.id === roomId) || roomStats[0] || null;
 }
 
-export function computeMetrics(appliances, previousMetrics, dailyLimit) {
+function getProfile(placeType = "home") {
+  return SIMULATION_PROFILES[normalizePlaceType(placeType)] || SIMULATION_PROFILES.home;
+}
+
+function getCurveIndex(date) {
+  const hour = date.getHours();
+  if (hour < 6) return 0;
+  if (hour < 9) return 1;
+  if (hour < 12) return 2;
+  if (hour < 15) return 3;
+  if (hour < 18) return 4;
+  if (hour < 22) return 5;
+  return 6;
+}
+
+function getUtilizationFactor(placeType, date) {
+  const hour = date.getHours();
+  switch (normalizePlaceType(placeType)) {
+    case "school":
+      if (hour >= 8 && hour < 16) return 1.06;
+      if (hour >= 6 && hour < 8) return 0.54;
+      if (hour >= 16 && hour < 19) return 0.34;
+      return 0.18;
+    case "industry":
+      if (hour >= 6 && hour < 22) return 1.14;
+      return 0.76;
+    case "office":
+      if (hour >= 9 && hour < 18) return 0.96;
+      if (hour >= 7 && hour < 9) return 0.52;
+      if (hour >= 18 && hour < 21) return 0.36;
+      return 0.2;
+    case "home":
+    default:
+      if (hour >= 18 && hour < 23) return 0.96;
+      if (hour >= 6 && hour < 9) return 0.58;
+      if (hour >= 9 && hour < 18) return 0.46;
+      return 0.28;
+  }
+}
+
+function getDayProgressFactor(placeType, date) {
+  const hour = date.getHours() + date.getMinutes() / 60;
+  switch (normalizePlaceType(placeType)) {
+    case "school":
+      if (hour < 6) return 0.08;
+      if (hour < 8) return 0.18;
+      if (hour < 12) return 0.46;
+      if (hour < 16) return 0.72;
+      if (hour < 19) return 0.82;
+      return 0.9;
+    case "industry":
+      if (hour < 6) return 0.28;
+      if (hour < 12) return 0.56;
+      if (hour < 18) return 0.82;
+      if (hour < 22) return 0.94;
+      return 1.0;
+    case "office":
+      if (hour < 7) return 0.1;
+      if (hour < 9) return 0.22;
+      if (hour < 13) return 0.54;
+      if (hour < 18) return 0.78;
+      if (hour < 21) return 0.88;
+      return 0.94;
+    case "home":
+    default:
+      if (hour < 6) return 0.08;
+      if (hour < 9) return 0.2;
+      if (hour < 13) return 0.38;
+      if (hour < 18) return 0.58;
+      if (hour < 22) return 0.86;
+      return 0.96;
+  }
+}
+
+function detectSpike(placeType, activeAppliances, date) {
+  const type = normalizePlaceType(placeType);
+  const heavyActive = activeAppliances.filter((item) => item.watts >= 2200);
+  if (!heavyActive.length) {
+    return { unusualSpike: false, spikeWatts: 0 };
+  }
+
+  if (type === "industry") {
+    const pulse = (Math.sin((date.getMinutes() * 60 + date.getSeconds()) / 14) + 1) / 2;
+    if (pulse > 0.82) {
+      const heavyWatts = heavyActive.reduce((sum, item) => sum + item.watts, 0);
+      return {
+        unusualSpike: true,
+        spikeWatts: Math.round(heavyWatts * 0.18 + 900),
+      };
+    }
+  }
+
+  if (type === "school" && activeAppliances.some((item) => item.type === "lab-equipment") && (date.getHours() < 7 || date.getHours() >= 18)) {
+    return { unusualSpike: true, spikeWatts: 480 };
+  }
+
+  return { unusualSpike: false, spikeWatts: 0 };
+}
+
+export function computeMetrics(appliances, previousMetrics, dailyLimit, placeType = "home") {
   const now = new Date();
-  const activeAppliances = appliances.filter((item) => item.on);
-  const baseModeledLoad = appliances.reduce((sum, item) => sum + (item.watts * item.dailyHours) / 1000, 0);
-  const activeWatts = activeAppliances.reduce((sum, item) => sum + item.watts, 0) + 42;
+  const type = normalizePlaceType(placeType);
+  const profile = getProfile(type);
+  const activeAppliances = (appliances || []).filter((item) => item.on);
+  const activeBaseWatts = activeAppliances.reduce((sum, item) => sum + item.watts, 0);
+  const standbyWatts = profile.standbyWatts + Math.max(0, (appliances || []).length - activeAppliances.length) * profile.idlePerDevice;
+  const utilizationFactor = getUtilizationFactor(type, now);
+  const { unusualSpike, spikeWatts } = detectSpike(type, activeAppliances, now);
+  const activeWatts = Math.round((activeBaseWatts + standbyWatts) * utilizationFactor + spikeWatts);
   const liveLoadKw = toTwoDecimals(activeWatts / 1000);
-  const hour = now.getHours();
-  const peakHour = hour >= 18 && hour < 22;
-  const baselineToday = 6.4 + baseModeledLoad * 0.44;
-  const previousToday = previousMetrics?.todayUsage || baselineToday;
-  const drift = liveLoadKw * 0.001 + (peakHour ? 0.0003 : 0.00012);
-  const todayUsage = toTwoDecimals(Math.max(baselineToday, previousToday + drift));
-  const weeklyUsage = toOneDecimal(todayUsage * 6.7);
-  const monthlyUsage = toOneDecimal(todayUsage * 27.3);
-  const rawVoltage = 229 - liveLoadKw * 5 - (peakHour ? 8 : 0) + Math.sin((now.getMinutes() / 60) * Math.PI * 2) * 1.6;
+  const modeledDaily = (appliances || []).reduce((sum, item) => sum + (item.watts * item.dailyHours) / 1000, 0);
+  const targetToday = profile.baseDaily + modeledDaily * getDayProgressFactor(type, now);
+  const previousToday = Number(previousMetrics?.todayUsage) || targetToday;
+  const todayUsage = toTwoDecimals(Math.max(profile.baseDaily, previousMetrics ? previousToday * 0.56 + targetToday * 0.44 : targetToday));
+  const weeklyUsage = toOneDecimal(todayUsage * profile.weeklyFactor);
+  const monthlyUsage = toOneDecimal(todayUsage * profile.monthlyFactor);
+  const [peakStart, peakEnd] = profile.peakHours;
+  const peakHour = now.getHours() >= peakStart && now.getHours() < peakEnd;
+  const rawVoltage = profile.nominalVoltage - liveLoadKw * profile.voltageDrop - (peakHour ? 5 : 0) - (unusualSpike ? 8 : 0) + Math.sin((now.getMinutes() / 60) * Math.PI * 2) * 1.4;
   const voltage = Math.max(193, Math.min(238, Math.round(rawVoltage)));
   const current = toOneDecimal(activeWatts / Math.max(voltage, 1));
-  const billEstimate = Math.round(monthlyUsage * 8.35);
+  const billEstimate = Math.round(monthlyUsage * profile.tariff);
 
   return {
     liveLoadKw,
@@ -498,22 +674,27 @@ export function computeMetrics(appliances, previousMetrics, dailyLimit) {
     voltage,
     current,
     billEstimate,
-    lowVoltage: voltage < 210,
+    lowVoltage: voltage < profile.lowVoltageAt,
     overLimit: todayUsage > dailyLimit,
     peakHour,
+    unusualSpike,
+    simulationMode: getPlaceConfig(type).simulationMode,
     lastSyncedAt: now.toISOString(),
     activeDevices: activeAppliances.length,
   };
 }
 
-export function createInitialHistory(todayUsage) {
+export function createInitialHistory(todayUsage, placeType = "home") {
+  const profile = getProfile(placeType);
   const history = [];
   const now = new Date();
+  const baseline = Math.max(profile.baseDaily, Number(todayUsage) || profile.baseDaily);
   for (let index = 13; index >= 0; index -= 1) {
     const day = new Date(now);
     day.setDate(now.getDate() - index);
-    const variance = ((13 - index) % 4) * 0.6;
-    const totalKwh = index === 0 ? todayUsage : Math.max(8.4, todayUsage - (index * 0.55 + variance));
+    const variance = ((13 - index) % 5 - 2) * 0.06;
+    const multiplier = 1 + variance;
+    const totalKwh = index === 0 ? baseline : Math.max(profile.baseDaily * 0.7, baseline * (0.92 - index * 0.012) * multiplier);
     history.push({
       date: day.toISOString().slice(0, 10),
       totalKwh: toOneDecimal(totalKwh),
@@ -539,12 +720,11 @@ export function syncTodayHistory(history, todayUsage) {
   return nextHistory.slice(-14);
 }
 
-export function buildTrendSeries(range, metrics, history) {
+export function buildTrendSeries(range, metrics, history, placeType = "home") {
+  const profile = getProfile(placeType);
   if (range === "daily") {
     const labels = ["6a", "9a", "12p", "3p", "6p", "9p", "12a"];
-    const values = labels.map((_, index) =>
-      toOneDecimal(Math.max(0.4, metrics.liveLoadKw * (0.55 + index * 0.16) + (index % 2 === 0 ? 0.2 : 0.4)))
-    );
+    const values = profile.dailyCurve.map((multiplier) => toOneDecimal(Math.max(0.2, metrics.liveLoadKw * multiplier)));
     return { labels, values };
   }
 
@@ -557,26 +737,27 @@ export function buildTrendSeries(range, metrics, history) {
   }
 
   const labels = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
-  const values = labels.map((_, index) => toOneDecimal(Math.max(280, metrics.monthlyUsage - (5 - index) * 18 + index * 4)));
+  const values = labels.map((_, index) => toOneDecimal(Math.max(profile.baseDaily * 8, metrics.monthlyUsage * (0.76 + index * 0.05))));
   return { labels, values };
 }
 
-export function buildDeviceComparison(appliances, rooms, floors) {
+export function buildDeviceComparison(appliances, rooms, floors, placeType = "home") {
   const roomMap = Object.fromEntries((rooms || []).map((room) => [room.id, room.name]));
-  const floorMap = Object.fromEntries(normalizeFloors(floors, rooms, appliances).map((floor) => [floor.id, floor.name]));
-  return appliances
+  const floorMap = Object.fromEntries(normalizeFloors(floors, rooms, appliances, placeType).map((floor) => [floor.id, floor.name]));
+  return (appliances || [])
     .slice()
     .sort((left, right) => right.watts - left.watts)
     .slice(0, 6)
     .map((item) => ({
-      label: `${floorMap[ensureFloorId(item.floorId)] || defaultFloorName(item.floorId)} ${roomMap[item.roomId] || item.room || "Room"} ${item.name}`,
+      label: `${floorMap[ensureFloorId(item.floorId)] || defaultFloorName(item.floorId, placeType)} ${roomMap[item.roomId] || item.room || "Room"} ${item.name}`,
       watts: item.watts,
       on: item.on,
     }));
 }
 
-export function buildAlerts(metrics, roomStats, dailyLimit) {
+export function buildAlerts(metrics, roomStats, dailyLimit, placeType = "home") {
   const alerts = [];
+  const type = normalizePlaceType(placeType);
 
   if (metrics.overLimit) {
     alerts.push({
@@ -584,7 +765,7 @@ export function buildAlerts(metrics, roomStats, dailyLimit) {
       title: "Daily limit exceeded",
       detail: `${toOneDecimal(metrics.todayUsage - dailyLimit)} kWh above the configured daily budget.`,
     });
-  } else if (dailyLimit - metrics.todayUsage < 2) {
+  } else if (dailyLimit - metrics.todayUsage < Math.max(2, dailyLimit * 0.08)) {
     alerts.push({
       tone: "warning",
       title: "Approaching daily limit",
@@ -604,16 +785,26 @@ export function buildAlerts(metrics, roomStats, dailyLimit) {
     alerts.push({
       tone: "info",
       title: "Peak hour usage",
-      detail: `${metrics.liveLoadKw} kW is active during the higher tariff window.`,
+      detail: `${metrics.liveLoadKw} kW is active during the higher tariff window for this ${type} profile.`,
     });
   }
 
-  const overloadedRooms = roomStats.filter((room) => room.overloaded);
+  if (metrics.unusualSpike) {
+    alerts.push({
+      tone: "danger",
+      title: type === "industry" ? "Industrial load spike" : "Unusual spike detected",
+      detail: type === "industry"
+        ? "Heavy machinery is drawing above the normal production baseline. Check backup and safety systems."
+        : "One or more high-consumption devices are pulling more power than the expected schedule.",
+    });
+  }
+
+  const overloadedRooms = (roomStats || []).filter((room) => room.overloaded);
   if (overloadedRooms.length) {
     alerts.push({
       tone: "danger",
       title: "Overload warning",
-      detail: `${overloadedRooms.map((room) => `${defaultFloorName(room.floorId)} ${room.name}`).join(", ")} has high appliance demand and needs attention.`,
+      detail: `${overloadedRooms.map((room) => `${defaultFloorName(room.floorId, placeType)} ${room.name}`).join(", ")} has high appliance demand and needs attention.`,
     });
   }
 
@@ -661,7 +852,7 @@ export function deviceStyle(device) {
 }
 
 export function serializeAppliances(appliances) {
-  return appliances.map((item) => ({
+  return (appliances || []).map((item) => ({
     deviceId: item.deviceId,
     floorId: ensureFloorId(item.floorId),
     roomId: item.roomId,
@@ -678,7 +869,7 @@ export function serializeAppliances(appliances) {
 }
 
 export function serializeRooms(rooms) {
-  return rooms.map((item) => ({
+  return (rooms || []).map((item) => ({
     id: item.id,
     floorId: ensureFloorId(item.floorId),
     type: item.type,
