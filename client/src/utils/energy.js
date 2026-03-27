@@ -6,7 +6,7 @@ export const ROOM_LIBRARY = [
   { key: "living", label: "Living Room", threshold: 2200 },
   { key: "bedroom", label: "Bedroom", threshold: 1800 },
   { key: "kitchen", label: "Kitchen", threshold: 1700 },
-  { key: "bathroom", label: "Bathroom", threshold: 1000 },
+  { key: "bathroom", label: "Bathroom", threshold: 2400 },
   { key: "custom", label: "Custom Room", threshold: 1600 },
 ];
 
@@ -16,7 +16,16 @@ export const DEVICE_LIBRARY = [
   { type: "light", name: "Light", watts: 90, dailyHours: 6.5 },
   { type: "tv", name: "TV", watts: 180, dailyHours: 5.2 },
   { type: "fridge", name: "Refrigerator", watts: 220, dailyHours: 18.5 },
+  { type: "water-heater", name: "Water Heater", watts: 1800, dailyHours: 1.4 },
 ];
+
+const ROOM_DEVICE_TYPES = {
+  living: ["fan", "ac", "light", "tv", "fridge"],
+  bedroom: ["fan", "ac", "light"],
+  kitchen: ["fan", "ac", "light", "tv", "fridge"],
+  bathroom: ["light", "ac", "water-heater"],
+  custom: ["fan", "ac", "light", "tv", "fridge", "water-heater"],
+};
 
 const DEFAULT_ROOM_LAYOUT = [
   { type: "living", name: "Living Room", x: 0, y: 0, width: 280, height: 160 },
@@ -43,18 +52,14 @@ const applianceBlueprints = [
   { room: "Bedroom", name: "Fan", type: "fan", watts: 60, dailyHours: 9.0, on: true },
   { room: "Bedroom", name: "AC", type: "ac", watts: 1300, dailyHours: 3.6, on: false },
   { room: "Bedroom", name: "Light", type: "light", watts: 60, dailyHours: 5.0, on: true },
-  { room: "Bedroom", name: "TV", type: "tv", watts: 120, dailyHours: 2.4, on: false },
-  { room: "Bedroom", name: "Refrigerator", type: "fridge", watts: 160, dailyHours: 10.0, on: false },
   { room: "Kitchen", name: "Fan", type: "fan", watts: 55, dailyHours: 6.2, on: true },
   { room: "Kitchen", name: "AC", type: "ac", watts: 900, dailyHours: 1.5, on: false },
   { room: "Kitchen", name: "Light", type: "light", watts: 80, dailyHours: 7.0, on: true },
   { room: "Kitchen", name: "TV", type: "tv", watts: 95, dailyHours: 1.0, on: false },
   { room: "Kitchen", name: "Refrigerator", type: "fridge", watts: 260, dailyHours: 22.0, on: true },
-  { room: "Bathroom", name: "Fan", type: "fan", watts: 35, dailyHours: 3.5, on: false },
   { room: "Bathroom", name: "AC", type: "ac", watts: 650, dailyHours: 1.2, on: false },
   { room: "Bathroom", name: "Light", type: "light", watts: 50, dailyHours: 3.3, on: true },
-  { room: "Bathroom", name: "TV", type: "tv", watts: 70, dailyHours: 0.7, on: false },
-  { room: "Bathroom", name: "Refrigerator", type: "fridge", watts: 120, dailyHours: 5.5, on: false },
+  { room: "Bathroom", name: "Water Heater", type: "water-heater", watts: 1800, dailyHours: 1.2, on: false },
 ];
 
 export function clamp(value, min, max) {
@@ -72,12 +77,43 @@ function slugify(value) {
     .replace(/(^-|-$)/g, "");
 }
 
+function resolveRoomType(roomOrType) {
+  if (typeof roomOrType === "string") {
+    return roomOrType.toLowerCase();
+  }
+
+  const type = String(roomOrType?.type || "").toLowerCase();
+  if (type) {
+    return type;
+  }
+
+  const name = String(roomOrType?.name || "").toLowerCase();
+  if (name.includes("bed")) return "bedroom";
+  if (name.includes("bath")) return "bathroom";
+  if (name.includes("kitchen")) return "kitchen";
+  if (name.includes("living")) return "living";
+  return "custom";
+}
+
 function roomThreshold(type) {
   return ROOM_LIBRARY.find((room) => room.key === type)?.threshold || 1600;
 }
 
 function defaultRoomName(type) {
   return ROOM_LIBRARY.find((room) => room.key === type)?.label || "Custom Room";
+}
+
+export function getAllowedDeviceTypes(roomOrType) {
+  return ROOM_DEVICE_TYPES[resolveRoomType(roomOrType)] || ROOM_DEVICE_TYPES.custom;
+}
+
+export function getAllowedDeviceLibrary(roomOrType) {
+  const allowed = new Set(getAllowedDeviceTypes(roomOrType));
+  return DEVICE_LIBRARY.filter((device) => allowed.has(device.type));
+}
+
+export function isDeviceAllowedInRoom(roomOrType, deviceType) {
+  return getAllowedDeviceTypes(roomOrType).includes(deviceType);
 }
 
 function uniqueRoomName(baseName, roomList, ignoreId) {
@@ -108,6 +144,7 @@ function defaultDevicePlacement(type, count) {
     light: [0.5, 0.18],
     tv: [0.33, 0.72],
     fridge: [0.72, 0.72],
+    "water-heater": [0.72, 0.64],
   };
   const fallback = placements[type] || [0.5, 0.5];
   const nudge = Math.min(count * 0.05, 0.14);
@@ -117,8 +154,23 @@ function defaultDevicePlacement(type, count) {
   };
 }
 
+function upgradeLegacyRoomDevice(room, item) {
+  if (resolveRoomType(room) === "bathroom" && item.type === "fan") {
+    return {
+      ...item,
+      type: "water-heater",
+      name: "Water Heater",
+      watts: Number(item.watts) >= 500 ? Number(item.watts) : 1800,
+      dailyHours: Number(item.dailyHours) || 1.2,
+      highUsage: true,
+    };
+  }
+
+  return item;
+}
+
 export function createRoom(payload = {}) {
-  const type = payload.type || "custom";
+  const type = resolveRoomType(payload.type || payload.name || "custom");
   const legacyWidth = payload.width == null && payload.w != null ? Number(payload.w) * 40 : null;
   const legacyHeight = payload.height == null && payload.h != null ? Number(payload.h) * 40 : null;
   const width = clamp(Number(payload.width ?? legacyWidth ?? 160) || 160, MIN_ROOM_SIZE, BOARD_WIDTH);
@@ -134,7 +186,7 @@ export function createRoom(payload = {}) {
     y,
     width,
     height,
-    threshold: Number(payload.threshold) || roomThreshold(type),
+    threshold: Math.max(Number(payload.threshold) || 0, roomThreshold(type)),
   };
 }
 
@@ -209,7 +261,7 @@ export function createDefaultAppliances(roomList = createDefaultRooms()) {
   return applianceBlueprints
     .map((item) => {
       const room = roomMap[item.room];
-      if (!room) {
+      if (!room || !isDeviceAllowedInRoom(room, item.type)) {
         return null;
       }
       roomCounts[room.id] = roomCounts[room.id] || 0;
@@ -243,32 +295,40 @@ export function mergeSavedAppliances(savedAppliances, roomList, options = {}) {
   const roomByName = Object.fromEntries(roomList.map((room) => [room.name.toLowerCase(), room]));
   const roomCounts = {};
 
-  return savedAppliances.map((item) => {
-    const matchedRoom = roomById[item.roomId] || roomByName[String(item.room || "").toLowerCase()] || roomList[0] || null;
-    if (matchedRoom) {
-      roomCounts[matchedRoom.id] = roomCounts[matchedRoom.id] || 0;
-    }
-    const device = createDevice(
-      {
-        deviceId: item.deviceId,
-        roomId: matchedRoom ? matchedRoom.id : String(item.roomId || ""),
-        room: matchedRoom ? matchedRoom.name : String(item.room || ""),
-        name: item.name,
-        type: item.type,
-        watts: item.watts,
-        dailyHours: item.dailyHours,
-        on: item.on,
-        highUsage: item.highUsage,
-        xPct: item.xPct,
-        yPct: item.yPct,
-      },
-      matchedRoom ? roomCounts[matchedRoom.id] : 0
-    );
-    if (matchedRoom) {
-      roomCounts[matchedRoom.id] += 1;
-    }
-    return device;
-  });
+  const normalized = savedAppliances
+    .map((item) => {
+      const matchedRoom = roomById[item.roomId] || roomByName[String(item.room || "").toLowerCase()] || roomList[0] || null;
+      const upgradedItem = matchedRoom ? upgradeLegacyRoomDevice(matchedRoom, item) : item;
+      if (matchedRoom && !isDeviceAllowedInRoom(matchedRoom, upgradedItem.type)) {
+        return null;
+      }
+      if (matchedRoom) {
+        roomCounts[matchedRoom.id] = roomCounts[matchedRoom.id] || 0;
+      }
+      const device = createDevice(
+        {
+          deviceId: upgradedItem.deviceId,
+          roomId: matchedRoom ? matchedRoom.id : String(upgradedItem.roomId || ""),
+          room: matchedRoom ? matchedRoom.name : String(upgradedItem.room || ""),
+          name: upgradedItem.name,
+          type: upgradedItem.type,
+          watts: upgradedItem.watts,
+          dailyHours: upgradedItem.dailyHours,
+          on: upgradedItem.on,
+          highUsage: upgradedItem.highUsage,
+          xPct: upgradedItem.xPct,
+          yPct: upgradedItem.yPct,
+        },
+        matchedRoom ? roomCounts[matchedRoom.id] : 0
+      );
+      if (matchedRoom) {
+        roomCounts[matchedRoom.id] += 1;
+      }
+      return device;
+    })
+    .filter(Boolean);
+
+  return normalized.length || !preferDefaultsWhenMissing || !roomList.length ? normalized : createDefaultAppliances(roomList);
 }
 
 export function calculateRoomStats(rooms, appliances) {

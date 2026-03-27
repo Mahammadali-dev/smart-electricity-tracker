@@ -6,7 +6,7 @@ import MetricCard from "../components/MetricCard";
 import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
-  DEVICE_LIBRARY,
+  getAllowedDeviceLibrary,
   MIN_ROOM_SIZE,
   ROOM_LIBRARY,
   calculateRoomStats,
@@ -385,7 +385,9 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   function handleAddDevice(roomId, type) {
     const room = rooms.find((item) => item.id === roomId);
     if (!room) return setMessage("Please select a room first");
-    const template = DEVICE_LIBRARY.find((item) => item.type === type) || DEVICE_LIBRARY[0];
+    const allowedDevices = getAllowedDeviceLibrary(room);
+    const template = allowedDevices.find((item) => item.type === type);
+    if (!template) return setMessage(`${room.name} does not support that device.`);
     const count = devices.filter((device) => device.roomId === roomId && device.type === type).length;
     const nextDevice = createDevice({ roomId: room.id, room: room.name, name: count ? `${template.name} ${count + 1}` : template.name, type: template.type, watts: template.watts, dailyHours: template.dailyHours, on: true }, devices.filter((device) => device.roomId === roomId).length);
     setDevices((current) => [...current, nextDevice]);
@@ -449,6 +451,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
 
   const gridStyle = { "--grid-step-x": `${(gridSize / BOARD_WIDTH) * 100}%`, "--grid-step-y": `${(gridSize / BOARD_HEIGHT) * 100}%` };
   const selectedRoomDevices = devices.filter((device) => device.roomId === selectedRoomId);
+  const availableDevices = selectedRoom ? getAllowedDeviceLibrary(selectedRoom) : [];
 
   return (
     <div className="setup-layout">
@@ -541,7 +544,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
               <div className="builder-stack">
                 <div className="panel-head stacked"><div><span className="section-tag">Devices</span><h3>Place appliances inside rooms</h3><p>Click a device to add it, then drag it within the selected room.</p></div></div>
                 <div className="room-pill-grid">{rooms.map((room) => <button key={room.id} type="button" className={`room-pill ${selectedRoomId === room.id ? "active" : ""}`} onClick={() => setSelectedRoomId(room.id)}>{room.name}</button>)}</div>
-                <div className="device-palette">{DEVICE_LIBRARY.map((device) => <button key={device.type} type="button" draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", device.type)} onClick={() => handleAddDevice(selectedRoomId, device.type)}><span className="map-device-icon"><ApplianceIcon type={device.type} /></span><strong>{device.name}</strong><span>{device.watts}W default</span></button>)}</div>
+                <div className="device-palette">{availableDevices.length ? availableDevices.map((device) => <button key={device.type} type="button" draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", device.type)} onClick={() => handleAddDevice(selectedRoomId, device.type)}><span className="map-device-icon"><ApplianceIcon type={device.type} /></span><strong>{device.name}</strong><span>{device.watts}W default</span></button>) : <article className="setup-inline-card"><strong>No device options</strong><span>Select a room to see the devices allowed there.</span></article>}</div>
                 <div className="builder-note">{selectedRoom ? `Selected room: ${selectedRoom.name}. Drag existing devices to reposition them.` : "Select a room to add devices."}</div>
                 <div className="setup-device-list">{selectedRoomDevices.length ? selectedRoomDevices.map((device) => <article key={device.deviceId} className="setup-device-row"><strong>{device.name}</strong><span>{device.watts}W, {device.on ? "currently ON" : "currently OFF"}</span><div className="setup-inline-grid"><label className="inline-field"><span>Watts</span><input type="number" min="10" max="5000" value={device.watts} onChange={(event) => handleDeviceWatts(device.deviceId, event.target.value)} /></label><button type="button" className="ghost-button" onClick={() => handleToggleDevice(device.deviceId)}>{device.on ? "Turn OFF" : "Turn ON"}</button></div><button type="button" className="ghost-button" onClick={() => handleRemoveDevice(device.deviceId)}>Remove device</button></article>) : <article className="setup-inline-card"><strong>No devices in this room</strong><span>Add a device from the palette to begin controlling it.</span></article>}</div>
               </div>

@@ -1,4 +1,4 @@
-﻿function IconWrapper({ children }) {
+function IconWrapper({ children }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
@@ -47,6 +47,18 @@ export default function ApplianceIcon({ type }) {
         <rect x="4" y="6" width="16" height="10" rx="2" />
         <path d="M10 20h4" />
         <path d="M12 16v4" />
+      </IconWrapper>
+    );
+  }
+
+  if (type === "water-heater") {
+    return (
+      <IconWrapper>
+        <rect x="7" y="4" width="10" height="14" rx="3" />
+        <path d="M12 8v6" />
+        <path d="M10 11h4" />
+        <path d="M9 20h6" />
+        <path d="M18.5 9.2c1.1 1.1 1.1 2.8 0 3.9" />
       </IconWrapper>
     );
   }
