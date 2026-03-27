@@ -1,14 +1,32 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
+
+const roomSchema = new mongoose.Schema(
+  {
+    id: String,
+    type: String,
+    name: String,
+    x: Number,
+    y: Number,
+    width: Number,
+    height: Number,
+    threshold: Number,
+  },
+  { _id: false }
+);
 
 const applianceSchema = new mongoose.Schema(
   {
     deviceId: String,
+    roomId: String,
     room: String,
     name: String,
     type: String,
     watts: Number,
+    dailyHours: Number,
     on: Boolean,
     highUsage: Boolean,
+    xPct: Number,
+    yPct: Number,
   },
   { _id: false }
 );
@@ -53,6 +71,14 @@ const usageProfileSchema = new mongoose.Schema(
       ref: "User",
       required: true,
       unique: true,
+    },
+    setupCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    rooms: {
+      type: [roomSchema],
+      default: [],
     },
     latestMetrics: {
       type: metricsSchema,

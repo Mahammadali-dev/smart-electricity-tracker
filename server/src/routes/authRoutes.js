@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
@@ -28,6 +28,14 @@ function serializeUser(user) {
   };
 }
 
+function profileSettings(profile) {
+  return profile?.settings || { dailyLimit: 28, darkMode: true };
+}
+
+function profileSetupState(profile) {
+  return Boolean(profile?.setupCompleted && Array.isArray(profile?.rooms) && profile.rooms.length);
+}
+
 router.post("/signup", async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -52,10 +60,15 @@ router.post("/signup", async (req, res) => {
       password: passwordHash,
     });
 
-    await UsageProfile.create({ user: user._id });
-
+    const profile = await UsageProfile.create({ user: user._id, setupCompleted: false });
     const token = createToken(user);
-    return res.status(201).json({ token, user: serializeUser(user) });
+
+    return res.status(201).json({
+      token,
+      user: serializeUser(user),
+      settings: profileSettings(profile),
+      setupCompleted: false,
+    });
   } catch (error) {
     console.error("Signup error", error);
     return res.status(500).json({ message: "Unable to create account right now." });
@@ -80,8 +93,15 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
+    const profile = await UsageProfile.findOne({ user: user._id });
     const token = createToken(user);
-    return res.json({ token, user: serializeUser(user) });
+
+    return res.json({
+      token,
+      user: serializeUser(user),
+      settings: profileSettings(profile),
+      setupCompleted: profileSetupState(profile),
+    });
   } catch (error) {
     console.error("Login error", error);
     return res.status(500).json({ message: "Unable to login right now." });
@@ -96,7 +116,11 @@ router.get("/user-data", authenticateToken, async (req, res) => {
     }
 
     const profile = await UsageProfile.findOne({ user: req.user.id });
-    return res.json({ user: serializeUser(user), settings: profile?.settings || { dailyLimit: 28, darkMode: true } });
+    return res.json({
+      user: serializeUser(user),
+      settings: profileSettings(profile),
+      setupCompleted: profileSetupState(profile),
+    });
   } catch (error) {
     console.error("User data error", error);
     return res.status(500).json({ message: "Unable to load user data." });

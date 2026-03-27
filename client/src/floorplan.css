@@ -1,0 +1,477 @@
+.setup-layout {
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.setup-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.setup-topbar,
+.setup-canvas-card,
+.setup-sidebar,
+.setup-actions {
+  padding: 22px;
+}
+
+.setup-step-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.step-chip {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text);
+  padding: 14px 16px;
+  display: grid;
+  gap: 6px;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.step-chip:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.step-chip.active,
+.step-chip.done {
+  border-color: rgba(20, 184, 166, 0.38);
+  background: rgba(20, 184, 166, 0.1);
+  box-shadow: 0 0 18px rgba(20, 184, 166, 0.12);
+}
+
+.step-chip.locked,
+.step-chip:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.setup-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.setup-sidebar {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.setup-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.setup-action-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.setup-hint {
+  display: grid;
+  gap: 4px;
+}
+
+.palette-grid,
+.device-palette,
+.room-pill-grid,
+.setup-summary-grid,
+.grid-preset-row {
+  display: grid;
+  gap: 12px;
+}
+
+.palette-grid,
+.device-palette,
+.grid-preset-row {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.room-pill-grid {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.room-type-button,
+.room-pill,
+.device-palette button,
+.grid-preset-button {
+  min-height: 52px;
+  border-radius: 16px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.room-type-button.active,
+.room-pill.active,
+.grid-preset-button.active {
+  border-color: rgba(20, 184, 166, 0.42);
+  background: rgba(20, 184, 166, 0.12);
+  box-shadow: 0 0 18px rgba(20, 184, 166, 0.12);
+}
+
+.device-palette button {
+  flex-direction: column;
+  justify-content: flex-start;
+  text-align: left;
+  align-items: flex-start;
+}
+
+.room-line-list,
+.setup-device-list,
+.builder-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.room-line-item,
+.setup-device-row,
+.setup-inline-card,
+.builder-note {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 14px 16px;
+  display: grid;
+  gap: 6px;
+}
+
+.room-line-item.selected,
+.setup-inline-card.selected {
+  border-color: rgba(20, 184, 166, 0.42);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.room-line-item,
+.room-type-button,
+.room-pill,
+.device-palette button,
+.setup-device-row,
+.setup-inline-card,
+.builder-note,
+.map-device,
+.floor-room-title,
+.setup-dimension-badge,
+.blueprint-grid-meta {
+  overflow: hidden;
+}
+
+.setup-field,
+.inline-field {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-field span,
+.inline-field span,
+.builder-note,
+.setup-hint span,
+.room-line-item span,
+.setup-device-row span,
+.setup-inline-card span,
+.blueprint-grid-meta span,
+.setup-dimension-badge span {
+  color: var(--muted);
+}
+
+.setup-inline-grid,
+.room-line-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.blueprint-shell {
+  position: relative;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.005)),
+    rgba(11, 15, 20, 0.64);
+  min-height: 540px;
+}
+
+.blueprint-board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 12 / 10;
+  min-height: 440px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.blueprint-board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(20, 184, 166, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(20, 184, 166, 0.08) 1px, transparent 1px);
+  background-size: var(--grid-step-x, 8.3333%) var(--grid-step-y, 10%);
+  pointer-events: none;
+}
+
+.blueprint-board::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 20px;
+  border: 1px dashed rgba(20, 184, 166, 0.16);
+  pointer-events: none;
+}
+
+.blueprint-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  text-align: center;
+}
+
+.blueprint-grid-meta,
+.setup-dimension-badge {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(20, 184, 166, 0.2);
+  background: rgba(17, 24, 39, 0.88);
+}
+
+.blueprint-grid-meta {
+  left: 16px;
+  bottom: 16px;
+}
+
+.setup-dimension-badge {
+  transform: translate(-10%, -115%);
+  min-width: 130px;
+  max-width: 220px;
+  pointer-events: none;
+}
+
+.floor-room,
+.floor-room-preview {
+  position: absolute;
+  border-radius: 22px;
+  border: 2px solid rgba(31, 41, 55, 0.96);
+  background: linear-gradient(180deg, rgba(11, 15, 20, 0.92), rgba(17, 24, 39, 0.86));
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.08);
+}
+
+.floor-room.selected {
+  border-color: rgba(20, 184, 166, 0.42);
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.2), 0 0 20px rgba(20, 184, 166, 0.12);
+}
+
+.floor-room.overloaded,
+.floor-room.invalid,
+.floor-room-preview.invalid {
+  border-color: rgba(249, 115, 22, 0.72);
+}
+
+.floor-room-preview {
+  border-style: dashed;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.floor-room-title {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  min-height: 34px;
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: grid;
+  gap: 2px;
+  background: rgba(17, 24, 39, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.floor-room-title[data-room-handle="move"] {
+  cursor: grab;
+}
+
+.floor-room-warning {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.16);
+  color: #F97316;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+}
+
+.room-resize-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  background: rgba(20, 184, 166, 0.18);
+  z-index: 4;
+}
+
+.room-resize-handle.nw { top: 8px; left: 8px; cursor: nwse-resize; }
+.room-resize-handle.ne { top: 8px; right: 8px; cursor: nesw-resize; }
+.room-resize-handle.sw { left: 8px; bottom: 8px; cursor: nesw-resize; }
+.room-resize-handle.se { right: 8px; bottom: 8px; cursor: nwse-resize; }
+
+.floor-room-devices {
+  position: absolute;
+  inset: 52px 10px 10px;
+}
+
+.map-device {
+  position: absolute;
+  width: min(92px, calc(100% - 8px));
+  min-height: 52px;
+  transform: translate(-50%, -50%);
+  border-radius: 16px;
+  border: 1px solid var(--line-strong);
+  background: rgba(11, 15, 20, 0.86);
+  color: var(--text);
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  padding: 6px 6px 5px;
+}
+
+.map-device.on {
+  border-color: rgba(20, 184, 166, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.16);
+}
+
+.map-device.off {
+  border-color: rgba(249, 115, 22, 0.24);
+}
+
+.map-device.high {
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.14);
+}
+
+.map-device.setup-draggable {
+  cursor: grab;
+}
+
+.map-device-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.map-device strong,
+.map-device span {
+  display: block;
+  max-width: 100%;
+  text-align: center;
+  line-height: 1.1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.map-device strong {
+  font-size: 0.7rem;
+}
+
+.map-device .device-watts,
+.map-device .device-state {
+  font-size: 0.62rem;
+  color: var(--muted);
+}
+
+.map-device .device-state.on {
+  color: var(--accent);
+}
+
+.map-device .device-state.off {
+  color: #F97316;
+}
+
+.dashboard-floor-shell {
+  min-height: 500px;
+}
+
+.dashboard-blueprint-card .summary-grid {
+  margin-bottom: 14px;
+}
+
+.blueprint-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1120px) {
+  .setup-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .setup-layout {
+    padding: 16px;
+  }
+
+  .setup-step-row,
+  .setup-inline-grid,
+  .room-line-actions,
+  .setup-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-actions {
+    display: grid;
+  }
+
+  .blueprint-shell {
+    min-height: 380px;
+  }
+
+  .blueprint-board {
+    min-height: 340px;
+  }
+
+  .map-device {
+    width: min(74px, calc(100% - 8px));
+    min-height: 48px;
+  }
+
+  .setup-topbar,
+  .setup-canvas-card,
+  .setup-sidebar,
+  .setup-actions {
+    padding: 18px;
+  }
+}

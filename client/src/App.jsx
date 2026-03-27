@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { api } from "./utils/api";
 import { clearSession, loadSession, saveSession } from "./utils/session";
@@ -6,6 +6,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import DashboardPage from "./pages/DashboardPage";
+import SetupPage from "./pages/SetupPage";
 
 export default function App() {
   const [session, setSession] = useState(() => loadSession());
@@ -30,6 +31,7 @@ export default function App() {
           ...session,
           user: data.user,
           settings: data.settings,
+          setupCompleted: Boolean(data.setupCompleted),
         };
         setSession(nextSession);
         saveSession(nextSession);
@@ -56,6 +58,7 @@ export default function App() {
       token: payload.token,
       user: payload.user,
       settings: payload.settings || { dailyLimit: 28, darkMode: true },
+      setupCompleted: Boolean(payload.setupCompleted),
     };
 
     setSession(nextSession);
@@ -84,6 +87,24 @@ export default function App() {
     saveSession(nextSession);
   }
 
+  function handleSetupComplete(partial = {}) {
+    if (!session) {
+      return;
+    }
+
+    const nextSession = {
+      ...session,
+      setupCompleted: true,
+      settings: {
+        ...(session.settings || {}),
+        ...(partial.settings || {}),
+      },
+    };
+
+    setSession(nextSession);
+    saveSession(nextSession);
+  }
+
   if (booting) {
     return (
       <div className="boot-shell">
@@ -95,25 +116,44 @@ export default function App() {
     );
   }
 
+  const defaultProtectedPath = session?.token ? (session.setupCompleted ? "/dashboard" : "/setup") : "/login";
+
   return (
     <Routes>
       <Route
         path="/login"
-        element={session?.token ? <Navigate to="/dashboard" replace /> : <LoginPage onSuccess={handleAuthSuccess} />}
+        element={session?.token ? <Navigate to={defaultProtectedPath} replace /> : <LoginPage onSuccess={handleAuthSuccess} />}
       />
       <Route
         path="/signup"
-        element={session?.token ? <Navigate to="/dashboard" replace /> : <SignupPage onSuccess={handleAuthSuccess} />}
+        element={session?.token ? <Navigate to={defaultProtectedPath} replace /> : <SignupPage onSuccess={handleAuthSuccess} />}
+      />
+      <Route
+        path="/setup"
+        element={
+          <ProtectedRoute isAuthenticated={Boolean(session?.token)}>
+            <SetupPage
+              session={session}
+              onLogout={handleLogout}
+              onSetupComplete={handleSetupComplete}
+              onSettingsChange={handleSettingsChange}
+            />
+          </ProtectedRoute>
+        }
       />
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute isAuthenticated={Boolean(session?.token)}>
-            <DashboardPage session={session} onLogout={handleLogout} onSettingsChange={handleSettingsChange} />
+            {session?.setupCompleted ? (
+              <DashboardPage session={session} onLogout={handleLogout} onSettingsChange={handleSettingsChange} />
+            ) : (
+              <Navigate to="/setup" replace />
+            )}
           </ProtectedRoute>
         }
       />
-      <Route path="*" element={<Navigate to={session?.token ? "/dashboard" : "/login"} replace />} />
+      <Route path="*" element={<Navigate to={defaultProtectedPath} replace />} />
     </Routes>
   );
 }

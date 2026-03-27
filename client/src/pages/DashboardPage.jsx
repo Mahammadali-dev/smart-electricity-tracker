@@ -1,4 +1,5 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import Navigation from "../components/Navigation";
 import MetricCard from "../components/MetricCard";
@@ -11,10 +12,15 @@ import {
   calculateRoomStats,
   computeMetrics,
   createDefaultAppliances,
+  createDefaultRooms,
   createInitialHistory,
-  getRoomByName,
-  roomDefinitions,
+  deviceStyle,
+  getRoomById,
+  mergeSavedAppliances,
+  normalizeRooms,
+  roomStyle,
   serializeAppliances,
+  serializeRooms,
   syncTodayHistory,
 } from "../utils/energy";
 
@@ -40,18 +46,6 @@ const userAccess = [
   { name: "Family Member", role: "Member", access: "Living Room and Bedroom" },
   { name: "Caretaker", role: "Restricted", access: "Lighting and alerts only" },
 ];
-
-function mergeSavedAppliances(savedAppliances) {
-  const defaults = createDefaultAppliances();
-  if (!savedAppliances?.length) {
-    return defaults;
-  }
-
-  return defaults.map((item) => {
-    const saved = savedAppliances.find((entry) => entry.deviceId === item.deviceId);
-    return saved ? { ...item, ...saved } : item;
-  });
-}
 
 function formatNumber(value, digits = 1) {
   return Number(value || 0).toFixed(digits);
@@ -103,19 +97,22 @@ function RoomModal({ room, onClose }) {
 }
 
 export default function DashboardPage({ session, onLogout, onSettingsChange }) {
+  const navigate = useNavigate();
   const initialLimit = session?.settings?.dailyLimit || 28;
   const initialTheme = session?.settings?.darkMode === false ? "light" : "dark";
-  const defaultAppliances = createDefaultAppliances();
-  const initialMetrics = computeMetrics(defaultAppliances, null, initialLimit);
+  const initialRooms = createDefaultRooms();
+  const initialAppliances = createDefaultAppliances(initialRooms);
+  const initialMetrics = computeMetrics(initialAppliances, null, initialLimit);
 
   const [activeTab, setActiveTab] = useState("home");
-  const [appliances, setAppliances] = useState(defaultAppliances);
+  const [rooms, setRooms] = useState(initialRooms);
+  const [appliances, setAppliances] = useState(initialAppliances);
   const [dailyLimit, setDailyLimit] = useState(initialLimit);
   const [theme, setTheme] = useState(initialTheme);
   const [metrics, setMetrics] = useState(initialMetrics);
   const [dailyHistory, setDailyHistory] = useState(createInitialHistory(initialMetrics.todayUsage));
   const [notificationPrefs, setNotificationPrefs] = useState(notificationDefaults);
-  const [selectedRoom, setSelectedRoom] = useState(roomDefinitions[0].name);
+  const [selectedRoomId, setSelectedRoomId] = useState(initialRooms[0]?.id || null);
   const [roomModal, setRoomModal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -131,22 +128,28 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           return;
         }
 
-        const mergedAppliances = mergeSavedAppliances(data.appliances);
+        const nextRooms = normalizeRooms(data.rooms, data.appliances);
+        const seededRooms = nextRooms.length ? nextRooms : createDefaultRooms();
+        const seededAppliances = mergeSavedAppliances(data.appliances, seededRooms, {
+          preferDefaultsWhenMissing: true,
+        });
         const nextLimit = data.settings?.dailyLimit || initialLimit;
         const nextTheme = data.settings?.darkMode === false ? "light" : initialTheme;
         const seededMetrics = data.latestMetrics?.todayUsage
           ? {
               ...data.latestMetrics,
-              activeDevices: mergedAppliances.filter((item) => item.on).length,
+              activeDevices: seededAppliances.filter((item) => item.on).length,
             }
-          : computeMetrics(mergedAppliances, null, nextLimit);
+          : computeMetrics(seededAppliances, null, nextLimit);
         const seededHistory = data.dailyHistory?.length ? data.dailyHistory.slice(-14) : createInitialHistory(seededMetrics.todayUsage);
 
-        setAppliances(mergedAppliances);
+        setRooms(seededRooms);
+        setAppliances(seededAppliances);
         setDailyLimit(nextLimit);
         setTheme(nextTheme);
         setMetrics(seededMetrics);
         setDailyHistory(syncTodayHistory(seededHistory, seededMetrics.todayUsage));
+        setSelectedRoomId((current) => current || seededRooms[0]?.id || null);
         setSaveStatus("Live");
       } catch (loadError) {
         if (!ignore) {
@@ -170,7 +173,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     document.body.classList.toggle("theme-dark", theme === "dark");
     document.body.classList.toggle("theme-light", theme !== "dark");
     onSettingsChange({ darkMode: theme === "dark", dailyLimit });
-  }, [theme, dailyLimit]);
+  }, [theme, dailyLimit, onSettingsChange]);
 
   useEffect(() => {
     if (loading) {
@@ -197,6 +200,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
       try {
         setSaveStatus("Syncing");
         await api.saveUsage(session.token, {
+          rooms: serializeRooms(rooms),
           metrics,
           appliances: serializeAppliances(appliances),
           dailyHistory,
@@ -204,6 +208,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             dailyLimit,
             darkMode: theme === "dark",
           },
+          setupCompleted: true,
         });
         setSaveStatus("Live");
       } catch (_error) {
@@ -212,15 +217,15 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     }, 900);
 
     return () => clearTimeout(saveTimer);
-  }, [appliances, dailyLimit, theme, dailyHistory, metrics, loading, session.token]);
+  }, [rooms, appliances, dailyLimit, theme, dailyHistory, metrics, loading, session.token]);
 
-  const roomStats = calculateRoomStats(appliances);
-  const selectedRoomData = getRoomByName(roomStats, selectedRoom);
-  const alerts = buildAlerts(metrics, roomStats, dailyLimit);
+  const roomStats = calculateRoomStats(rooms, appliances);
+  const selectedRoomData = getRoomById(roomStats, selectedRoomId);
+  const alerts = buildAlerts(metrics, roomStats, dailyLimit).filter((alert) => notificationPrefs.usageLimit || alert.tone !== "danger");
   const dailyTrend = buildTrendSeries("daily", metrics, dailyHistory);
   const weeklyTrend = buildTrendSeries("weekly", metrics, dailyHistory);
   const monthlyTrend = buildTrendSeries("monthly", metrics, dailyHistory);
-  const deviceComparison = buildDeviceComparison(appliances);
+  const deviceComparison = buildDeviceComparison(appliances, rooms);
   const remainingUsage = Math.max(0, dailyLimit - metrics.todayUsage);
 
   function toggleAppliance(deviceId) {
@@ -235,9 +240,9 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     });
   }
 
-  function openRoom(roomName) {
-    setSelectedRoom(roomName);
-    setRoomModal(getRoomByName(roomStats, roomName));
+  function openRoom(roomId) {
+    setSelectedRoomId(roomId);
+    setRoomModal(getRoomById(roomStats, roomId));
   }
 
   function togglePreference(key) {
@@ -247,70 +252,87 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     }));
   }
 
-  function renderRoomMap() {
+  function renderFloorMap() {
+    if (!roomStats.length) {
+      return (
+        <div className="blueprint-empty">
+          <article className="setup-inline-card selected">
+            <strong>No custom house map yet</strong>
+            <span>Open the setup wizard to build your first floor plan.</span>
+            <button type="button" className="ghost-button" onClick={() => navigate("/setup")}>Open setup wizard</button>
+          </article>
+        </div>
+      );
+    }
+
+    return roomStats.map((room) => (
+      <article
+        key={room.id}
+        className={`floor-room ${selectedRoomId === room.id ? "selected" : ""} ${room.overloaded ? "overloaded" : ""}`}
+        style={roomStyle(room)}
+        role="button"
+        tabIndex={0}
+        onClick={() => openRoom(room.id)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            openRoom(room.id);
+          }
+        }}
+      >
+        <div className="floor-room-title">
+          <strong>{room.name}</strong>
+          <span>{room.activeWatts}W active</span>
+        </div>
+        {room.overloaded ? <span className="floor-room-warning">!</span> : null}
+        <div className="floor-room-devices">
+          {room.devices.map((device) => (
+            <button
+              key={device.deviceId}
+              type="button"
+              className={`map-device ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""}`}
+              style={deviceStyle(device)}
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleAppliance(device.deviceId);
+              }}
+            >
+              <span className="map-device-icon">
+                <ApplianceIcon type={device.type} />
+              </span>
+              <strong>{device.name}</strong>
+              <span className="device-watts">{device.watts}W</span>
+              <span className={`device-state ${device.on ? "on" : "off"}`}>{device.on ? "ON" : "OFF"}</span>
+            </button>
+          ))}
+        </div>
+      </article>
+    ));
+  }
+
+  function renderRoomMapPanel() {
     return (
-      <article className="panel room-map-panel">
+      <article className="panel room-map-panel dashboard-blueprint-card">
         <div className="panel-head">
           <div>
             <span className="section-tag">2D house map</span>
-            <h3>Top-view appliance layout</h3>
+            <h3>Saved floor plan</h3>
             <p>Tap any room to inspect total usage. Tap any appliance to switch it ON or OFF.</p>
           </div>
-          <span className={`status-pill ${roomStats.some((room) => room.overloaded) ? "danger" : "ok"}`}>
-            {roomStats.some((room) => room.overloaded) ? "Warning active" : "Normal load"}
-          </span>
+          <div className="blueprint-actions">
+            <span className={`status-pill ${roomStats.some((room) => room.overloaded) ? "danger" : "ok"}`}>
+              {roomStats.some((room) => room.overloaded) ? "Warning active" : "Normal load"}
+            </span>
+            <button type="button" className="ghost-button" onClick={() => navigate("/setup")}>Edit layout</button>
+          </div>
         </div>
 
-        <div className="room-map-grid">
-          {roomStats.map((room) => (
-            <article
-              key={room.name}
-              className={`room-card ${selectedRoom === room.name ? "selected" : ""}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => openRoom(room.name)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  openRoom(room.name);
-                }
-              }}
-            >
-              {room.overloaded ? <span className="room-warning">!</span> : null}
+        <div className="summary-grid room-summary-grid">
+          <MetricCard label="Selected room" value={selectedRoomData?.name || "No room"} note={selectedRoomData ? `${selectedRoomData.activeWatts}W active` : "No custom room saved"} />
+          <MetricCard label="Devices ON" value={selectedRoomData?.activeCount || 0} note={selectedRoomData?.overloaded ? "Above threshold" : "Within safe load"} tone={selectedRoomData?.overloaded ? "danger" : "default"} />
+        </div>
 
-              <div className="room-card-head">
-                <div>
-                  <h4>{room.name}</h4>
-                  <p>{room.activeWatts}W active</p>
-                </div>
-                <span className={`room-state ${room.overloaded ? "danger" : "ok"}`}>
-                  {room.overloaded ? "Overload" : "Stable"}
-                </span>
-              </div>
-
-              <div className="appliance-grid">
-                {room.devices.map((device) => (
-                  <button
-                    key={device.deviceId}
-                    type="button"
-                    className={`appliance-tile ${device.on ? "on" : "off"} ${device.highUsage ? "high-usage" : ""}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      toggleAppliance(device.deviceId);
-                    }}
-                  >
-                    <span className="icon-pill">
-                      <ApplianceIcon type={device.type} />
-                    </span>
-                    <span className="appliance-copy">
-                      <strong>{device.name}</strong>
-                      <small>{device.watts}W</small>
-                    </span>
-                    <span className={`toggle-pill ${device.on ? "on" : "off"}`}>{device.on ? "ON" : "OFF"}</span>
-                  </button>
-                ))}
-              </div>
-            </article>
-          ))}
+        <div className="blueprint-shell dashboard-floor-shell">
+          <div className="blueprint-board readonly">{renderFloorMap()}</div>
         </div>
       </article>
     );
@@ -324,9 +346,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             <div className="hero-copy">
               <span className="section-tag">Realtime dashboard</span>
               <h2>{formatNumber(metrics.liveLoadKw, 2)} kW live load</h2>
-              <p>
-                Voltage, current, daily usage, and room demand are refreshed in real time from simulated IoT meter data.
-              </p>
+              <p>Voltage, current, daily usage, and room demand are refreshed in real time from simulated IoT meter data.</p>
             </div>
             <div className="hero-badge">
               <strong>{metrics.activeDevices}</strong>
@@ -357,7 +377,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           <MetricCard label="Sync" value={saveStatus} note="Backend save status" tone={saveStatus === "Offline" ? "danger" : "default"} />
         </section>
 
-        {renderRoomMap()}
+        {renderRoomMapPanel()}
 
         <section className="content-grid two-up">
           <ChartPanel title="Hourly load" subtitle="Real-time demand pattern across the day." data={dailyTrend} accent="teal" />
@@ -399,24 +419,24 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             <div className="panel-head">
               <div>
                 <span className="section-tag">Selected room</span>
-                <h3>{selectedRoomData.name}</h3>
+                <h3>{selectedRoomData?.name || "No room selected"}</h3>
                 <p>Room-wise power status with total watt draw and active appliance count.</p>
               </div>
             </div>
 
             <div className="room-summary-grid">
-              <MetricCard label="Live room load" value={`${formatNumber(selectedRoomData.activeLoadKw, 2)} kW`} note={`${selectedRoomData.activeWatts}W in use`} />
-              <MetricCard label="Devices on" value={selectedRoomData.activeCount} note="Running right now" />
+              <MetricCard label="Live room load" value={`${formatNumber(selectedRoomData?.activeLoadKw || 0, 2)} kW`} note={`${selectedRoomData?.activeWatts || 0}W in use`} />
+              <MetricCard label="Devices on" value={selectedRoomData?.activeCount || 0} note="Running right now" />
               <MetricCard
                 label="Status"
-                value={selectedRoomData.overloaded ? "Warning" : "Healthy"}
-                note={selectedRoomData.overloaded ? "Above room threshold" : "Within safe range"}
-                tone={selectedRoomData.overloaded ? "danger" : "default"}
+                value={selectedRoomData?.overloaded ? "Warning" : "Healthy"}
+                note={selectedRoomData?.overloaded ? "Above room threshold" : "Within safe range"}
+                tone={selectedRoomData?.overloaded ? "danger" : "default"}
               />
             </div>
 
             <div className="device-detail-list">
-              {selectedRoomData.devices.map((device) => (
+              {(selectedRoomData?.devices || []).map((device) => (
                 <div key={device.deviceId} className={`device-detail-item ${device.on ? "on" : "off"}`}>
                   <div className="device-leading">
                     <span className="icon-pill compact">
@@ -450,8 +470,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
                 <p>Represents appliances that are currently ON and consuming power.</p>
               </article>
               <article>
-                <strong>Red toggle</strong>
-                <p>Represents appliances that are OFF and excluded from the live demand total.</p>
+                <strong>Orange warning</strong>
+                <p>Represents room or device states that need attention due to high load.</p>
               </article>
               <article>
                 <strong>High usage highlight</strong>
@@ -461,7 +481,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           </article>
         </section>
 
-        {renderRoomMap()}
+        {renderRoomMapPanel()}
       </div>
     );
   }
@@ -542,6 +562,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
                 <span>Toggle the app appearance across mobile and desktop layouts.</span>
               </div>
               <span className={`theme-switch ${theme === "dark" ? "active" : ""}`}>Toggle</span>
+            </button>
+
+            <button type="button" className="toggle-setting" onClick={() => navigate("/setup")}>
+              <div>
+                <strong>Edit house map</strong>
+                <span>{rooms.length} rooms and {appliances.length} devices saved in your custom layout.</span>
+              </div>
+              <span className="theme-switch active">Open</span>
             </button>
           </article>
 

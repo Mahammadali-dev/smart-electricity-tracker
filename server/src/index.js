@@ -66,6 +66,8 @@ app.get("*", (req, res, next) => {
     req.path.startsWith("/login") ||
     req.path.startsWith("/user-data") ||
     req.path.startsWith("/save-usage") ||
+    req.path.startsWith("/save-layout") ||
+    req.path.startsWith("/get-layout") ||
     req.path.startsWith("/usage-data") ||
     req.path.startsWith("/health")
   ) {

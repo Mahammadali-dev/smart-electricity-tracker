@@ -74,4 +74,17 @@ export const api = {
       token
     );
   },
+  getLayout(token) {
+    return request("/get-layout", { method: "GET" }, token);
+  },
+  saveLayout(token, payload) {
+    return request(
+      "/save-layout",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      token
+    );
+  },
 };
