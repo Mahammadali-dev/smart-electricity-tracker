@@ -179,7 +179,7 @@ function RoomModal({ room, onClose }) {
   );
 }
 
-export default function DashboardPage({ session, onLogout, onSettingsChange, onUserUpdate }) {
+export default function DashboardPage({ session, onLogout, onSettingsChange, onUserUpdate, onNotify }) {
   const navigate = useNavigate();
   const shellRef = useRef(null);
   const placeType = normalizePlaceType(session?.user?.placeType || session?.settings?.placeType);
@@ -224,6 +224,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   const dirtyTimerRef = useRef(0);
   const metricsInputsRef = useRef({ appliances: initialAppliances, dailyLimit: initialLimit, placeType });
   const simulatorInputsRef = useRef({ appliances: serializeAppliances(initialAppliances), placeType });
+  const alertToastMapRef = useRef(new Map());
+  const previousSimulatorErrorRef = useRef("");
 
   const roomLookup = useMemo(() => Object.fromEntries(rooms.map((room) => [room.id, room])), [rooms]);
   const activeRooms = useMemo(() => filterRoomsByFloor(rooms, activeFloorId), [rooms, activeFloorId]);
@@ -515,6 +517,60 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
       window.clearTimeout(timerId);
     };
   }, [loading, session.token]);
+
+  useEffect(() => {
+    if (!onNotify || loading) {
+      return;
+    }
+
+    const now = Date.now();
+    const activeKeys = new Set();
+
+    alerts
+      .filter((alert) => alert.tone === "danger" || alert.tone === "warning")
+      .slice(0, 3)
+      .forEach((alert) => {
+        const key = `${alert.tone}:${alert.title}`;
+        activeKeys.add(key);
+        const lastTriggeredAt = alertToastMapRef.current.get(key) || 0;
+
+        if (now - lastTriggeredAt < 45000) {
+          return;
+        }
+
+        onNotify({
+          title: alert.title,
+          message: alert.detail,
+          tone: alert.tone === "danger" ? "warning" : alert.tone,
+          duration: 4600,
+        });
+        alertToastMapRef.current.set(key, now);
+      });
+
+    for (const [key, timestamp] of alertToastMapRef.current.entries()) {
+      if (!activeKeys.has(key) && now - timestamp > 6000) {
+        alertToastMapRef.current.delete(key);
+      }
+    }
+  }, [alerts, loading, onNotify]);
+
+  useEffect(() => {
+    if (!onNotify || loading) {
+      previousSimulatorErrorRef.current = simulatorError;
+      return;
+    }
+
+    if (simulatorError && simulatorError !== previousSimulatorErrorRef.current) {
+      onNotify({
+        title: "Simulator connection issue",
+        message: simulatorError,
+        tone: "warning",
+        duration: 5000,
+      });
+    }
+
+    previousSimulatorErrorRef.current = simulatorError;
+  }, [loading, onNotify, simulatorError]);
 
   const markDirty = useCallback((label = "Unsaved changes") => {
     setIsDirty(true);
@@ -1515,6 +1571,9 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     </div>
   );
 }
+
+
+
 
 
 

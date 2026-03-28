@@ -2724,3 +2724,107 @@ body.theme-light .device-live-chip {
     text-align: left;
   }
 }
+
+.toast-viewport {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 12px;
+  width: min(92vw, 420px);
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.toast-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(30, 30, 30, 0.98), rgba(18, 18, 18, 0.96));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  pointer-events: auto;
+  animation: toastSlideIn 260ms ease;
+}
+
+body.theme-light .toast-item {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 244, 246, 0.96));
+}
+
+.toast-item.success {
+  border-color: rgba(0, 200, 83, 0.28);
+}
+
+.toast-item.info {
+  border-color: rgba(0, 200, 83, 0.2);
+}
+
+.toast-item.warning,
+.toast-item.error {
+  border-color: rgba(249, 115, 22, 0.28);
+}
+
+.toast-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.toast-copy strong,
+.toast-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-copy strong {
+  font-family: var(--font-display);
+  line-height: 1.1;
+}
+
+.toast-copy span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.toast-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+body.theme-light .toast-close {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .toast-viewport {
+    top: 12px;
+    width: calc(100vw - 20px);
+  }
+
+  .toast-item {
+    padding: 13px 14px;
+  }
+}

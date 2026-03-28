@@ -69,7 +69,12 @@ export default function LoginPage({ onSuccess }) {
 
     try {
       const result = await api.login(form);
-      onSuccess(result);
+      onSuccess(result, {
+        title: "Login successful",
+        message: `Welcome, ${result.user?.name || "User"}. Your smart electricity dashboard is ready.`,
+        tone: "success",
+        duration: 3200,
+      });
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -288,3 +293,4 @@ export default function LoginPage({ onSuccess }) {
     </div>
   );
 }
+
