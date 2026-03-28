@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -5,8 +6,11 @@ import { User } from "../models/User.js";
 import { UsageProfile } from "../models/UsageProfile.js";
 import { authenticateToken } from "../middleware/auth.js";
 import { createBlankProfile, defaultSettingsForPlace, normalizePlaceType } from "../utils/placeAutoConfig.js";
+import { isMailConfigured, sendPasswordResetOtpEmail } from "../utils/mailer.js";
 
 const router = express.Router();
+const RESET_OTP_TTL_MS = 10 * 60 * 1000;
+const RESET_REQUEST_COOLDOWN_MS = 60 * 1000;
 
 function createToken(user) {
   return jwt.sign(
@@ -62,6 +66,16 @@ function profileSettings(profile, placeType = "home") {
 
 function profileSetupState(profile) {
   return Boolean(profile?.setupCompleted);
+}
+
+function hashOtp(otp) {
+  return crypto.createHash("sha256").update(String(otp)).digest("hex");
+}
+
+function clearPasswordResetState(user) {
+  user.passwordResetOtpHash = null;
+  user.passwordResetOtpExpiresAt = null;
+  user.passwordResetOtpRequestedAt = null;
 }
 
 router.post("/signup", async (req, res) => {
@@ -151,6 +165,87 @@ router.post("/login", async (req, res) => {
   }
 });
 
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const normalizedEmail = String(req.body?.email || "").toLowerCase().trim();
+
+    if (!normalizedEmail) {
+      return res.status(400).json({ message: "Email is required." });
+    }
+
+    if (!isMailConfigured()) {
+      return res.status(503).json({ message: "Password reset email is not configured yet." });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.json({ message: "If that email is registered, an OTP has been sent to the mailbox." });
+    }
+
+    const now = Date.now();
+    if (user.passwordResetOtpRequestedAt && now - new Date(user.passwordResetOtpRequestedAt).getTime() < RESET_REQUEST_COOLDOWN_MS) {
+      return res.status(429).json({ message: "Please wait a minute before requesting another OTP." });
+    }
+
+    const otp = String(crypto.randomInt(100000, 1000000));
+    user.passwordResetOtpHash = hashOtp(otp);
+    user.passwordResetOtpExpiresAt = new Date(now + RESET_OTP_TTL_MS);
+    user.passwordResetOtpRequestedAt = new Date(now);
+    await user.save();
+
+    await sendPasswordResetOtpEmail({
+      to: user.email,
+      otp,
+      name: user.name,
+    });
+
+    return res.json({ message: "OTP sent to your email address." });
+  } catch (error) {
+    console.error("Forgot password error", error);
+    return res.status(500).json({ message: "Unable to send password reset OTP right now." });
+  }
+});
+
+router.post("/reset-password", async (req, res) => {
+  try {
+    const normalizedEmail = String(req.body?.email || "").toLowerCase().trim();
+    const otp = String(req.body?.otp || "").trim();
+    const newPassword = String(req.body?.newPassword || "");
+
+    if (!normalizedEmail || !otp || !newPassword) {
+      return res.status(400).json({ message: "Email, OTP, and new password are required." });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters long." });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user || !user.passwordResetOtpHash || !user.passwordResetOtpExpiresAt) {
+      return res.status(400).json({ message: "Invalid or expired OTP." });
+    }
+
+    if (new Date(user.passwordResetOtpExpiresAt).getTime() < Date.now()) {
+      clearPasswordResetState(user);
+      await user.save();
+      return res.status(400).json({ message: "OTP expired. Request a new code." });
+    }
+
+    if (hashOtp(otp) !== user.passwordResetOtpHash) {
+      return res.status(401).json({ message: "Invalid OTP." });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    clearPasswordResetState(user);
+    await user.save();
+
+    return res.json({ message: "Password updated successfully. Please log in with your new password." });
+  } catch (error) {
+    console.error("Reset password error", error);
+    return res.status(500).json({ message: "Unable to reset password right now." });
+  }
+});
+
 router.get("/user-data", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
@@ -197,5 +292,3 @@ router.patch("/user-profile", authenticateToken, async (req, res) => {
 });
 
 export default router;
-
-

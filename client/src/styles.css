@@ -2261,3 +2261,59 @@ textarea {
     display: none;
   }
 }
+
+.auth-form-footer {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.inline-link-button {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.auth-reset-panel {
+  margin-top: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.auth-reset-panel h3 {
+  margin: 10px 0 6px;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+.auth-inline-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.form-alert.success,
+.form-alert.info {
+  border-color: rgba(255, 184, 0, 0.18);
+  background: rgba(255, 184, 0, 0.1);
+}
+
+@media (min-width: 721px) {
+  .auth-inline-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .auth-inline-actions .primary-button:last-of-type,
+  .auth-inline-actions .ghost-button:last-of-type {
+    grid-column: span 2;
+  }
+}
+
+@media (min-width: 721px) {
+  .auth-inline-actions .wide-button:last-child {
+    grid-column: span 2;
+  }
+}

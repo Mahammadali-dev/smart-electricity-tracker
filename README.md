@@ -146,3 +146,29 @@ Official references:
 - [Render Static Sites](https://render.com/docs/static-sites)
 
 I prepared the app for hosted deployment, but I did not deploy it to Render or Railway from this machine because that requires network access and your cloud account credentials.
+
+## React Password Reset Email Setup
+
+The React + Express deployment now supports OTP-based password reset over email.
+
+Backend environment variables required on Render:
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+- `SMTP_SECURE`
+
+Typical Gmail settings:
+
+```text
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@example.com
+SMTP_PASS=your-app-password
+SMTP_FROM=your-email@example.com
+SMTP_SECURE=false
+```
+
+If SMTP is missing, the backend will reject forgot-password requests with a clear configuration message instead of pretending the email was sent.

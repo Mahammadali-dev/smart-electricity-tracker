@@ -58,6 +58,18 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+  forgotPassword(payload) {
+    return request("/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  resetPassword(payload) {
+    return request("/reset-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
   getUserData(token) {
     return request("/user-data", { method: "GET" }, token);
   },
