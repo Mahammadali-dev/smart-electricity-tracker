@@ -91,7 +91,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const placeConfig = getPlaceConfig(placeType);
   const roomLibrary = useMemo(() => getPlaceRoomLibrary(placeType), [placeType]);
   const aiSuggestions = useMemo(() => getAiSuggestions(placeType), [placeType]);
-  const initialTheme = session?.settings?.darkMode === false ? "light" : "dark";
+  const isDarkMode = session?.settings?.darkMode !== false;
   const initialLimit = session?.settings?.dailyLimit || placeConfig.dailyLimit;
 
   const [loading, setLoading] = useState(true);
@@ -99,7 +99,6 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [step, setStep] = useState(1);
-  const [theme, setTheme] = useState(initialTheme);
   const [dailyLimit, setDailyLimit] = useState(initialLimit);
   const [gridSize, setGridSize] = useState(session?.settings?.gridSize || placeConfig.gridSize);
   const [roomType, setRoomType] = useState(roomLibrary[0]?.key || "custom");
@@ -170,7 +169,6 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         setMetrics(nextMetrics);
         setDailyHistory(syncTodayHistory(nextHistory, nextMetrics.todayUsage));
         setDailyLimit(nextLimit);
-        setTheme(data.settings?.darkMode === false ? "light" : "dark");
         setGridSize(data.settings?.gridSize || placeConfig.gridSize);
         setActiveFloorId(nextFloorId);
         setSelectedRoomId(nextRooms.find((room) => room.floorId === nextFloorId)?.id || null);
@@ -186,10 +184,8 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   }, [session.token, initialLimit, placeType, placeConfig.gridSize, placeConfig.simulationMode]);
 
   useEffect(() => {
-    document.body.classList.toggle("theme-dark", theme === "dark");
-    document.body.classList.toggle("theme-light", theme !== "dark");
-    onSettingsChange({ darkMode: theme === "dark", dailyLimit, placeType, gridSize, simulationMode: placeConfig.simulationMode });
-  }, [theme, dailyLimit, placeType, gridSize, placeConfig.simulationMode, onSettingsChange]);
+    onSettingsChange({ dailyLimit, placeType, gridSize, simulationMode: placeConfig.simulationMode });
+  }, [dailyLimit, placeType, gridSize, placeConfig.simulationMode, onSettingsChange]);
 
   useEffect(() => {
     if (loading) return;
@@ -650,7 +646,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         appliances: serializeAppliances(devices),
         metrics: finalMetrics,
         dailyHistory: finalHistory,
-        settings: { dailyLimit, darkMode: theme === "dark", placeType, gridSize, simulationMode: placeConfig.simulationMode },
+        settings: { dailyLimit, darkMode: isDarkMode, placeType, gridSize, simulationMode: placeConfig.simulationMode },
         setupCompleted: true,
       });
       onSetupComplete({ settings: { dailyLimit, darkMode: theme === "dark", placeType, gridSize, simulationMode: placeConfig.simulationMode } });
@@ -680,7 +676,6 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
             <p>AI already prepared the floors, rooms, and device mix for this {placeConfig.label.toLowerCase()} setup. Fine-tune the layout, then sync it back to the live dashboard.</p>
           </div>
           <div className="topbar-actions">
-            <button type="button" className="ghost-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "Light mode" : "Dark mode"}</button>
             {session?.setupCompleted ? <button type="button" className="ghost-button" onClick={() => navigate("/dashboard")}>Dashboard</button> : null}
             <button type="button" className="ghost-button" onClick={onLogout}>Logout</button>
           </div>

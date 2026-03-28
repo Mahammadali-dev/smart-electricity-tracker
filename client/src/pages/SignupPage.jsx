@@ -4,7 +4,7 @@ import { api } from "../utils/api";
 import { PLACE_TYPE_OPTIONS } from "../utils/placeProfiles";
 
 export default function SignupPage({ onSuccess }) {
-  const [form, setForm] = useState({ email: "", password: "", placeType: "home" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", placeType: "home" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -26,7 +26,11 @@ export default function SignupPage({ onSuccess }) {
     setSubmitting(true);
 
     try {
-      const result = await api.signup(form);
+      const result = await api.signup({
+        ...form,
+        name: form.name.trim(),
+        email: form.email.trim(),
+      });
       onSuccess(result);
     } catch (submitError) {
       setError(submitError.message);
@@ -39,10 +43,10 @@ export default function SignupPage({ onSuccess }) {
     <div className="auth-shell">
       <section className="auth-hero">
         <span className="section-tag">AI-assisted setup</span>
-        <h1>Select your place type once and get a fully configured smart energy system instantly.</h1>
+        <h1>Pick your place type, tell us your name, and launch a ready-made smart electricity system instantly.</h1>
         <p>
-          Tesla-style automation creates the floor layout, room map, device mix, grid scale, and simulation profile for
-          your place before you even open the dashboard.
+          Your place type drives the auto-generated floors, room map, device mix, grid scale, and simulation profile.
+          Your username personalizes the live dashboard and settings from the first session.
         </p>
 
         <div className="auth-points">
@@ -55,8 +59,8 @@ export default function SignupPage({ onSuccess }) {
             <span>{selectedPlace.simulationMode}</span>
           </article>
           <article className="panel mini-panel">
-            <strong>Ready instantly</strong>
-            <span>Rooms, devices, alerts, and floors are prepared automatically after signup.</span>
+            <strong>Personalized instantly</strong>
+            <span>Welcome messages, settings, and your cinematic control center will use your saved username.</span>
           </article>
         </div>
       </section>
@@ -66,7 +70,7 @@ export default function SignupPage({ onSuccess }) {
           <div>
             <span className="section-tag">Smart signup</span>
             <h2>Create account</h2>
-            <p>Pick your place type, create your login, and jump straight into the live dashboard.</p>
+            <p>Choose your place type, save your username, and step into a personalized smart energy dashboard.</p>
           </div>
         </div>
 
@@ -88,6 +92,20 @@ export default function SignupPage({ onSuccess }) {
               ))}
             </div>
           </fieldset>
+
+          <label>
+            <span>Username</span>
+            <input
+              type="text"
+              name="name"
+              value={form.name}
+              onChange={updateField}
+              placeholder="Enter your name"
+              minLength="2"
+              maxLength="40"
+              required
+            />
+          </label>
 
           <label>
             <span>Email</span>

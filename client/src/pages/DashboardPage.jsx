@@ -181,7 +181,7 @@ function RoomModal({ room, onClose }) {
   );
 }
 
-export default function DashboardPage({ session, onLogout, onSettingsChange }) {
+export default function DashboardPage({ session, onLogout, onSettingsChange, onUserUpdate }) {
   const navigate = useNavigate();
   const shellRef = useRef(null);
   const placeType = normalizePlaceType(session?.user?.placeType || session?.settings?.placeType);
@@ -215,6 +215,9 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saveStatus, setSaveStatus] = useState("Syncing");
+  const [profileName, setProfileName] = useState(() => session?.user?.name || "");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState({ tone: "", message: "" });
 
   const roomLookup = useMemo(() => Object.fromEntries(rooms.map((room) => [room.id, room])), [rooms]);
   const activeRooms = useMemo(() => filterRoomsByFloor(rooms, activeFloorId), [rooms, activeFloorId]);
@@ -245,6 +248,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     const source = selectedRoomData?.devices?.length ? selectedRoomData.devices : activeAppliances;
     return source.slice().sort((left, right) => (Number(right.on) - Number(left.on)) || right.watts - left.watts);
   }, [selectedRoomData, activeAppliances]);
+
+  useEffect(() => {
+    setTheme(session?.settings?.darkMode === false ? "light" : "dark");
+  }, [session?.settings?.darkMode]);
+
+  useEffect(() => {
+    setProfileName(session?.user?.name || "");
+  }, [session?.user?.name]);
   useEffect(() => {
     const host = shellRef.current;
     if (!host || typeof window === "undefined") {
@@ -381,8 +392,6 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   }, [session.token, initialLimit, initialTheme, initialGridSize, placeConfig.simulationMode, placeType]);
 
   useEffect(() => {
-    document.body.classList.toggle("theme-dark", theme === "dark");
-    document.body.classList.toggle("theme-light", theme !== "dark");
     onSettingsChange({ darkMode: theme === "dark", dailyLimit, placeType, gridSize, simulationMode });
   }, [theme, dailyLimit, placeType, gridSize, simulationMode, onSettingsChange]);
 
@@ -543,6 +552,30 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     setActiveFloorId(room.floorId);
     setSelectedRoomId(room.id);
     setActiveTab("devices");
+  }
+
+  async function handleProfileSave(event) {
+    event.preventDefault();
+    const trimmedName = profileName.trim();
+
+    if (trimmedName.length < 2) {
+      setProfileFeedback({ tone: "error", message: "Username must be at least 2 characters long." });
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileFeedback({ tone: "", message: "" });
+
+    try {
+      const result = await api.updateUserProfile(session.token, { name: trimmedName });
+      onUserUpdate?.(result.user, result.token);
+      setProfileName(result.user.name);
+      setProfileFeedback({ tone: "info", message: "Profile updated successfully." });
+    } catch (profileError) {
+      setProfileFeedback({ tone: "error", message: profileError.message || "Unable to update profile right now." });
+    } finally {
+      setProfileSaving(false);
+    }
   }
 
   function renderFloorSelectorPanel() {
@@ -1135,37 +1168,103 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   function renderSettingsTab() {
     return (
       <div className="tab-stack">
-        <section className="content-grid two-up">
+        <section className="content-grid two-up settings-grid-personal">
           <article className="panel settings-panel">
             <div className="panel-head">
               <div>
-                <span className="section-tag">Preferences</span>
-                <h3>Smart limits and theme</h3>
-                <p>Set the daily limit, switch dark mode, and maintain backend-synced preferences.</p>
+                <span className="section-tag">Profile</span>
+                <h3>Personal details</h3>
+                <p>Keep your smart workspace personal with a saved username that appears across the dashboard.</p>
               </div>
             </div>
 
-            <label className="settings-control">
-              <span>Daily usage limit</span>
-              <input type="range" min="10" max={placeType === "industry" ? 800 : placeType === "school" ? 250 : placeType === "office" ? 180 : 60} value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
-              <strong>{dailyLimit} kWh</strong>
-            </label>
+            <form className="profile-form" onSubmit={handleProfileSave}>
+              <label className="settings-control">
+                <span>Username</span>
+                <input
+                  type="text"
+                  value={profileName}
+                  onChange={(event) => {
+                    setProfileName(event.target.value);
+                    if (profileFeedback.message) {
+                      setProfileFeedback({ tone: "", message: "" });
+                    }
+                  }}
+                  placeholder="Enter your username"
+                  minLength="2"
+                  maxLength="40"
+                  required
+                />
+              </label>
 
-            <button type="button" className="toggle-setting" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-              <div>
-                <strong>{theme === "dark" ? "Dark mode enabled" : "Light mode enabled"}</strong>
-                <span>Matte black and solar amber styling stays consistent across mobile and desktop layouts.</span>
+              <div className="profile-readout">
+                <article className="profile-readout-card">
+                  <span>Email</span>
+                  <strong>{session.user.email}</strong>
+                </article>
+                <article className="profile-readout-card">
+                  <span>Place type</span>
+                  <strong>{placeConfig.label}</strong>
+                </article>
               </div>
-              <span className={`theme-switch ${theme === "dark" ? "active" : ""}`}>Toggle</span>
-            </button>
 
-            <button type="button" className="toggle-setting" onClick={() => navigate("/setup")}>
+              {profileFeedback.message ? <div className={`form-alert ${profileFeedback.tone} inline`}>{profileFeedback.message}</div> : null}
+
+              <button type="submit" className="primary-button wide-button" disabled={profileSaving}>
+                {profileSaving ? "Saving profile..." : "Save profile"}
+              </button>
+            </form>
+          </article>
+
+          <article className="panel theme-panel">
+            <div className="panel-head">
               <div>
-                <strong>Edit house map</strong>
-                <span>{floors.length} floors, {rooms.length} rooms, and {appliances.length} devices saved in your {placeConfig.label.toLowerCase()} layout.</span>
+                <span className="section-tag">Theme</span>
+                <h3>Dark and light mode</h3>
+                <p>Theme control lives only here, with a smoother full-app transition and mobile-friendly touch targets.</p>
               </div>
-              <span className="theme-switch active">Open</span>
-            </button>
+            </div>
+
+            <div className="theme-choice-grid">
+              <button type="button" className={`theme-choice-card ${theme === "dark" ? "active" : ""}`} onClick={() => setTheme("dark")}>
+                <span className="theme-choice-badge">Default</span>
+                <strong>Dark mode</strong>
+                <span>Matte black surfaces with cinematic amber highlights for focused monitoring.</span>
+              </button>
+              <button type="button" className={`theme-choice-card ${theme === "light" ? "active" : ""}`} onClick={() => setTheme("light")}>
+                <span className="theme-choice-badge">Bright</span>
+                <strong>Light mode</strong>
+                <span>Clean white panels with the same solar amber accent for a crisp daytime view.</span>
+              </button>
+            </div>
+          </article>
+        </section>
+
+        <section className="content-grid two-up settings-grid-secondary">
+          <article className="panel workspace-panel">
+            <div className="panel-head">
+              <div>
+                <span className="section-tag">Workspace</span>
+                <h3>Consumption limits</h3>
+                <p>Adjust your daily electricity budget and jump back into the house map editor whenever you need to refine the layout.</p>
+              </div>
+            </div>
+
+            <div className="settings-stack">
+              <label className="settings-control">
+                <span>Daily usage limit</span>
+                <input type="range" min="10" max={placeType === "industry" ? 800 : placeType === "school" ? 250 : placeType === "office" ? 180 : 60} value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
+                <strong>{dailyLimit} kWh</strong>
+              </label>
+
+              <button type="button" className="toggle-setting" onClick={() => navigate("/setup")}>
+                <div>
+                  <strong>Edit house map</strong>
+                  <span>{floors.length} floors, {rooms.length} rooms, and {appliances.length} devices saved in your {placeConfig.label.toLowerCase()} layout.</span>
+                </div>
+                <span className="theme-switch active">Open</span>
+              </button>
+            </div>
           </article>
 
           <article className="panel notification-panel">
@@ -1173,7 +1272,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
               <div>
                 <span className="section-tag">Notifications</span>
                 <h3>Alert preferences</h3>
-                <p>Control which safety and billing signals are highlighted in the dashboard.</p>
+                <p>Choose which warnings should stay prominent while you monitor the live energy flow.</p>
               </div>
             </div>
 
@@ -1186,44 +1285,6 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
                   </div>
                   <span className={`theme-switch ${value ? "active" : ""}`}>{value ? "On" : "Off"}</span>
                 </button>
-              ))}
-            </div>
-          </article>
-        </section>
-
-        <section className="content-grid two-up">
-          <article className="panel setup-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">IoT setup</span>
-                <h3>Connected objects</h3>
-                <p>The UI includes the hardware objects commonly used to collect and transmit electricity data.</p>
-              </div>
-            </div>
-
-            <div className="chip-list">
-              {iotObjects.map((item) => (
-                <span key={item} className="data-chip">{item}</span>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel access-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">User access</span>
-                <h3>{session.user.name}</h3>
-                <p>{session.user.email}</p>
-              </div>
-            </div>
-
-            <div className="access-list">
-              {userAccess.map((member) => (
-                <article key={member.name} className="access-card">
-                  <strong>{member.name}</strong>
-                  <span>{member.role}</span>
-                  <small>{member.access}</small>
-                </article>
               ))}
             </div>
           </article>
@@ -1241,8 +1302,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
         <header className="topbar panel cinematic-topbar">
           <div>
             <span className="section-tag">{placeConfig.label} AI workspace</span>
-            <h2>Smart Electricity Management</h2>
-            <p>Monitor power usage, control appliances, and analyze demand across rooms, floors, and intelligent device clusters in real time.</p>
+            <h2>Welcome, {session.user.name || "Operator"}</h2>
+            <p>Your personalized smart electricity dashboard is ready. Monitor live energy, tune your layout, and manage the full system from one cinematic control surface.</p>
           </div>
 
           <div className="topbar-actions">
@@ -1250,9 +1311,6 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
               <strong>{saveStatus}</strong>
               <span>Data sync</span>
             </div>
-            <button type="button" className="ghost-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-              {theme === "dark" ? "Light mode" : "Dark mode"}
-            </button>
           </div>
         </header>
 

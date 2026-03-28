@@ -9,9 +9,16 @@ import DashboardPage from "./pages/DashboardPage";
 import SetupPage from "./pages/SetupPage";
 
 export default function App() {
-  const [session, setSession] = useState(() => loadSession());
-  const [booting, setBooting] = useState(Boolean(loadSession()?.token));
-  const persistedSetupCompleted = Boolean(loadSession()?.setupCompleted);
+  const persistedSession = loadSession();
+  const [session, setSession] = useState(() => persistedSession);
+  const [booting, setBooting] = useState(Boolean(persistedSession?.token));
+  const persistedSetupCompleted = Boolean(persistedSession?.setupCompleted);
+
+  useEffect(() => {
+    const darkMode = session?.settings?.darkMode !== false;
+    document.body.classList.toggle("theme-dark", darkMode);
+    document.body.classList.toggle("theme-light", !darkMode);
+  }, [session?.settings?.darkMode]);
 
   useEffect(() => {
     let ignore = false;
@@ -31,7 +38,7 @@ export default function App() {
         const nextSession = {
           ...session,
           user: data.user,
-          settings: data.settings,
+          settings: data.settings || session.settings || { dailyLimit: 28, darkMode: true },
           setupCompleted: Boolean(data.setupCompleted),
         };
         setSession(nextSession);
@@ -81,6 +88,24 @@ export default function App() {
       settings: {
         ...(session.settings || {}),
         ...partialSettings,
+      },
+    };
+
+    setSession(nextSession);
+    saveSession(nextSession);
+  }
+
+  function handleUserUpdate(partialUser, nextToken) {
+    if (!session) {
+      return;
+    }
+
+    const nextSession = {
+      ...session,
+      token: nextToken || session.token,
+      user: {
+        ...(session.user || {}),
+        ...partialUser,
       },
     };
 
@@ -148,7 +173,12 @@ export default function App() {
         element={
           <ProtectedRoute isAuthenticated={Boolean(session?.token)}>
             {hasCompletedSetup ? (
-              <DashboardPage session={session} onLogout={handleLogout} onSettingsChange={handleSettingsChange} />
+              <DashboardPage
+                session={session}
+                onLogout={handleLogout}
+                onSettingsChange={handleSettingsChange}
+                onUserUpdate={handleUserUpdate}
+              />
             ) : (
               <Navigate to="/setup" replace />
             )}

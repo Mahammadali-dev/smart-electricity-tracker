@@ -61,6 +61,16 @@ export const api = {
   getUserData(token) {
     return request("/user-data", { method: "GET" }, token);
   },
+  updateUserProfile(token, payload) {
+    return request(
+      "/user-profile",
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+      token
+    );
+  },
   getUsageData(token) {
     return request("/usage-data", { method: "GET" }, token);
   },
