@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 const tabs = [
   { id: "home", label: "Dashboard", shortLabel: "Home", badge: "DB", detail: "Energy summary and floor map" },
   { id: "devices", label: "Devices", shortLabel: "Devices", badge: "DV", detail: "Room controls and live states" },
@@ -5,7 +7,7 @@ const tabs = [
   { id: "settings", label: "Settings", shortLabel: "Settings", badge: "ST", detail: "Limits, alerts, and profile" },
 ];
 
-export default function Navigation({ activeTab, onChange, onLogout, userName }) {
+function Navigation({ activeTab, onChange, onLogout, userName }) {
   return (
     <>
       <aside className="sidebar-nav panel">
@@ -60,3 +62,5 @@ export default function Navigation({ activeTab, onChange, onLogout, userName }) 
     </>
   );
 }
+
+export default memo(Navigation);

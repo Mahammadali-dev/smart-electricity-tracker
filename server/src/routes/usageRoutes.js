@@ -1,13 +1,9 @@
 import express from "express";
 import { authenticateToken } from "../middleware/auth.js";
 import { UsageProfile } from "../models/UsageProfile.js";
-import { defaultSettingsForPlace, normalizePlaceType } from "../utils/placeAutoConfig.js";
+import { createBlankProfile, defaultSettingsForPlace, normalizePlaceType } from "../utils/placeAutoConfig.js";
 
 const router = express.Router();
-const DEFAULT_FLOORS = [
-  { id: "floor-1", name: "Floor 1" },
-  { id: "floor-2", name: "Floor 2" },
-];
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -17,8 +13,12 @@ function ensureFloorId(value) {
   return String(value || "floor-1").trim().toLowerCase() || "floor-1";
 }
 
-function sanitizeFloors(floors = []) {
-  const fallback = Object.fromEntries(DEFAULT_FLOORS.map((floor) => [floor.id, { ...floor }]));
+function createFallbackFloor(placeType = "home") {
+  return createBlankProfile(placeType).floors[0] || { id: "floor-1", name: "Floor 1" };
+}
+
+function sanitizeFloors(floors = [], placeType = "home") {
+  const fallback = Object.fromEntries([createFallbackFloor(placeType)].map((floor) => [floor.id, { ...floor }]));
   floors.forEach((floor) => {
     const floorId = ensureFloorId(floor?.id);
     fallback[floorId] = {
@@ -83,8 +83,10 @@ function sanitizeHistory(history = []) {
     .slice(-31);
 }
 
-function sanitizeMetrics(metrics = {}) {
+function sanitizeMetrics(metrics = {}, placeType = "home") {
+  const base = createBlankProfile(placeType).latestMetrics;
   return {
+    ...base,
     liveLoadKw: Number(metrics.liveLoadKw) || 0,
     todayUsage: Number(metrics.todayUsage) || 0,
     weeklyUsage: Number(metrics.weeklyUsage) || 0,
@@ -96,13 +98,14 @@ function sanitizeMetrics(metrics = {}) {
     overLimit: Boolean(metrics.overLimit),
     peakHour: Boolean(metrics.peakHour),
     unusualSpike: Boolean(metrics.unusualSpike),
-    simulationMode: String(metrics.simulationMode || "Residential AI balance"),
+    simulationMode: String(metrics.simulationMode || base.simulationMode),
     lastSyncedAt: metrics.lastSyncedAt || new Date(),
+    activeDevices: Number(metrics.activeDevices) || 0,
   };
 }
 
-function sanitizeSettings(settings = {}) {
-  const placeType = normalizePlaceType(settings.placeType);
+function sanitizeSettings(settings = {}, fallbackPlaceType = "home") {
+  const placeType = normalizePlaceType(settings.placeType || fallbackPlaceType);
   const fallback = defaultSettingsForPlace(placeType);
   return {
     dailyLimit: Number(settings.dailyLimit) || fallback.dailyLimit,
@@ -114,44 +117,21 @@ function sanitizeSettings(settings = {}) {
 }
 
 function defaultPayload(placeType = "home") {
-  const settings = defaultSettingsForPlace(placeType);
-  return {
-    setupCompleted: false,
-    floors: DEFAULT_FLOORS,
-    rooms: [],
-    latestMetrics: {
-      liveLoadKw: 0,
-      todayUsage: 0,
-      weeklyUsage: 0,
-      monthlyUsage: 0,
-      voltage: 0,
-      current: 0,
-      billEstimate: 0,
-      lowVoltage: false,
-      overLimit: false,
-      peakHour: false,
-      unusualSpike: false,
-      simulationMode: settings.simulationMode,
-      lastSyncedAt: new Date(),
-    },
-    appliances: [],
-    dailyHistory: [],
-    settings,
-  };
+  return createBlankProfile(placeType);
 }
 
 router.post("/save-usage", authenticateToken, async (req, res) => {
   try {
+    const settings = sanitizeSettings(req.body.settings, req.user.placeType);
     const rooms = sanitizeRooms(req.body.rooms);
     const appliances = sanitizeAppliances(req.body.appliances);
-    const settings = sanitizeSettings(req.body.settings);
 
     const profile = await UsageProfile.findOneAndUpdate(
       { user: req.user.id },
       {
         $set: {
-          floors: sanitizeFloors(req.body.floors),
-          latestMetrics: sanitizeMetrics(req.body.metrics),
+          floors: sanitizeFloors(req.body.floors, settings.placeType),
+          latestMetrics: sanitizeMetrics(req.body.metrics, settings.placeType),
           appliances,
           rooms,
           dailyHistory: sanitizeHistory(req.body.dailyHistory),
@@ -185,18 +165,18 @@ router.get("/usage-data", authenticateToken, async (req, res) => {
 
 router.post("/save-layout", authenticateToken, async (req, res) => {
   try {
+    const settings = sanitizeSettings(req.body.settings, req.user.placeType);
     const rooms = sanitizeRooms(req.body.rooms);
     const appliances = sanitizeAppliances(req.body.appliances || req.body.devices);
-    const settings = sanitizeSettings(req.body.settings);
 
     const profile = await UsageProfile.findOneAndUpdate(
       { user: req.user.id },
       {
         $set: {
-          floors: sanitizeFloors(req.body.floors),
+          floors: sanitizeFloors(req.body.floors, settings.placeType),
           rooms,
           appliances,
-          latestMetrics: sanitizeMetrics(req.body.metrics),
+          latestMetrics: sanitizeMetrics(req.body.metrics, settings.placeType),
           dailyHistory: sanitizeHistory(req.body.dailyHistory),
           settings,
           setupCompleted: rooms.length > 0,
@@ -228,15 +208,16 @@ router.post("/save-layout", authenticateToken, async (req, res) => {
 
 router.get("/get-layout", authenticateToken, async (req, res) => {
   try {
+    const fallback = defaultPayload(req.user.placeType);
     const profile = await UsageProfile.findOne({ user: req.user.id });
     return res.json({
-      floors: profile?.floors || DEFAULT_FLOORS,
+      floors: profile?.floors || fallback.floors,
       rooms: profile?.rooms || [],
       devices: profile?.appliances || [],
       appliances: profile?.appliances || [],
       setupCompleted: Boolean(profile?.setupCompleted),
-      settings: profile?.settings || defaultPayload(req.user.placeType).settings,
-      metrics: profile?.latestMetrics || defaultPayload(req.user.placeType).latestMetrics,
+      settings: profile?.settings || fallback.settings,
+      metrics: profile?.latestMetrics || fallback.latestMetrics,
       dailyHistory: profile?.dailyHistory || [],
     });
   } catch (error) {

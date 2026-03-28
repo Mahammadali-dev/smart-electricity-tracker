@@ -199,9 +199,20 @@ export function createDefaultFloors(placeType = "home") {
   }));
 }
 
+export function createInitialFloors(placeType = "home") {
+  const [firstFloor = "Floor 1"] = getFloorNames(placeType);
+  return [{ id: "floor-1", name: firstFloor }];
+}
+
 export function normalizeFloors(savedFloors, savedRooms = [], savedAppliances = [], placeType = "home") {
   const normalizedType = normalizePlaceType(placeType);
-  const floors = Object.fromEntries(createDefaultFloors(normalizedType).map((floor) => [floor.id, floor]));
+  const baseFloors = Array.isArray(savedFloors) && savedFloors.length
+    ? savedFloors
+    : createInitialFloors(normalizedType);
+  const floors = Object.fromEntries(baseFloors.map((floor) => [ensureFloorId(floor.id), {
+    id: ensureFloorId(floor.id),
+    name: String(floor.name || defaultFloorName(floor.id, normalizedType)).trim() || defaultFloorName(floor.id, normalizedType),
+  }]));
 
   (savedFloors || []).forEach((floor) => {
     const floorId = ensureFloorId(floor?.id);
@@ -443,7 +454,7 @@ export function createDefaultAppliances(roomList = [], placeType = "home") {
 }
 
 export function mergeSavedAppliances(savedAppliances, roomList, options = {}, placeType = "home") {
-  const { preferDefaultsWhenMissing = true } = options;
+  const { preferDefaultsWhenMissing = false } = options;
   if (!Array.isArray(savedAppliances) || !savedAppliances.length) {
     return preferDefaultsWhenMissing && roomList.length ? createDefaultAppliances(roomList, placeType) : [];
   }
@@ -646,14 +657,35 @@ export function computeMetrics(appliances, previousMetrics, dailyLimit, placeTyp
   const now = new Date();
   const type = normalizePlaceType(placeType);
   const profile = getProfile(type);
-  const activeAppliances = (appliances || []).filter((item) => item.on);
+  const safeAppliances = appliances || [];
+
+  if (!safeAppliances.length) {
+    return {
+      liveLoadKw: 0,
+      todayUsage: 0,
+      weeklyUsage: 0,
+      monthlyUsage: 0,
+      voltage: profile.nominalVoltage,
+      current: 0,
+      billEstimate: 0,
+      lowVoltage: false,
+      overLimit: false,
+      peakHour: false,
+      unusualSpike: false,
+      simulationMode: getPlaceConfig(type).simulationMode,
+      lastSyncedAt: now.toISOString(),
+      activeDevices: 0,
+    };
+  }
+
+  const activeAppliances = safeAppliances.filter((item) => item.on);
   const activeBaseWatts = activeAppliances.reduce((sum, item) => sum + item.watts, 0);
-  const standbyWatts = profile.standbyWatts + Math.max(0, (appliances || []).length - activeAppliances.length) * profile.idlePerDevice;
+  const standbyWatts = profile.standbyWatts + Math.max(0, safeAppliances.length - activeAppliances.length) * profile.idlePerDevice;
   const utilizationFactor = getUtilizationFactor(type, now);
   const { unusualSpike, spikeWatts } = detectSpike(type, activeAppliances, now);
   const activeWatts = Math.round((activeBaseWatts + standbyWatts) * utilizationFactor + spikeWatts);
   const liveLoadKw = toTwoDecimals(activeWatts / 1000);
-  const modeledDaily = (appliances || []).reduce((sum, item) => sum + (item.watts * item.dailyHours) / 1000, 0);
+  const modeledDaily = safeAppliances.reduce((sum, item) => sum + (item.watts * item.dailyHours) / 1000, 0);
   const targetToday = profile.baseDaily + modeledDaily * getDayProgressFactor(type, now);
   const previousToday = Number(previousMetrics?.todayUsage) || targetToday;
   const todayUsage = toTwoDecimals(Math.max(profile.baseDaily, previousMetrics ? previousToday * 0.56 + targetToday * 0.44 : targetToday));
@@ -686,9 +718,14 @@ export function computeMetrics(appliances, previousMetrics, dailyLimit, placeTyp
 
 export function createInitialHistory(todayUsage, placeType = "home") {
   const profile = getProfile(placeType);
+  const baseline = Number(todayUsage) || 0;
+
+  if (baseline <= 0) {
+    return [];
+  }
+
   const history = [];
   const now = new Date();
-  const baseline = Math.max(profile.baseDaily, Number(todayUsage) || profile.baseDaily);
   for (let index = 13; index >= 0; index -= 1) {
     const day = new Date(now);
     day.setDate(now.getDate() - index);
@@ -704,6 +741,10 @@ export function createInitialHistory(todayUsage, placeType = "home") {
 }
 
 export function syncTodayHistory(history, todayUsage) {
+  if (!history?.length && (!(Number(todayUsage) > 0))) {
+    return [];
+  }
+
   const todayKey = new Date().toISOString().slice(0, 10);
   const nextHistory = history.length ? [...history] : createInitialHistory(todayUsage);
   const todayIndex = nextHistory.findIndex((item) => item.date === todayKey);
@@ -713,7 +754,7 @@ export function syncTodayHistory(history, todayUsage) {
       ...nextHistory[todayIndex],
       totalKwh: toOneDecimal(todayUsage),
     };
-  } else {
+  } else if (Number(todayUsage) > 0) {
     nextHistory.push({ date: todayKey, totalKwh: toOneDecimal(todayUsage) });
   }
 
@@ -881,3 +922,4 @@ export function serializeRooms(rooms) {
     threshold: item.threshold,
   }));
 }
+

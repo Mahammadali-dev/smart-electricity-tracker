@@ -2197,3 +2197,67 @@ body.theme-light {
     min-height: 60px;
   }
 }
+
+
+/* Performance tuning overrides */
+body {
+  transition: background 220ms ease, color 180ms ease;
+}
+
+#root,
+.auth-shell,
+.setup-layout,
+.dashboard-shell,
+.panel,
+.metric-card,
+.room-card,
+.status-card,
+input,
+select,
+textarea {
+  transition: background 220ms ease, color 180ms ease, border-color 220ms ease, box-shadow 220ms ease, opacity 180ms ease;
+}
+
+.cursor-glow {
+  transition: opacity 180ms ease;
+}
+
+.panel,
+.metric-card,
+.alert-card,
+.device-detail-item,
+.comparison-row,
+.access-card,
+.energy-stat-card,
+.energy-device-row,
+.floor-load-row,
+.floor-tab-chip,
+.nav-button,
+.mobile-nav-button,
+.ghost-button,
+.primary-button,
+.toggle-inline,
+.toggle-setting {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.chart-fill,
+.limit-bar span,
+.floor-load-meter span {
+  transition: width 240ms ease, box-shadow 160ms ease;
+}
+
+.energy-core,
+.energy-core-ring,
+.energy-alert-strip,
+.energy-device-row,
+.floor-load-row,
+.status-card-glow {
+  transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease, border-color 180ms ease;
+}
+
+@media (pointer: coarse) {
+  .cursor-glow {
+    display: none;
+  }
+}

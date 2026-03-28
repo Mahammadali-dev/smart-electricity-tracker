@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 function IconWrapper({ children }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -6,7 +8,7 @@ function IconWrapper({ children }) {
   );
 }
 
-export default function ApplianceIcon({ type }) {
+function ApplianceIcon({ type }) {
   switch (type) {
     case "fan":
       return (
@@ -192,3 +194,5 @@ export default function ApplianceIcon({ type }) {
       );
   }
 }
+
+export default memo(ApplianceIcon);

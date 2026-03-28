@@ -199,6 +199,32 @@ export function defaultSettingsForPlace(placeType) {
   };
 }
 
+function createInitialFloors(placeType) {
+  const meta = getPlaceMeta(placeType);
+  const firstFloor = meta.floors?.[0] || { id: "floor-1", name: "Floor 1" };
+  return [{ ...firstFloor }];
+}
+
+function buildEmptyMetrics(placeType, settings) {
+  const meta = getPlaceMeta(placeType);
+  return {
+    liveLoadKw: 0,
+    todayUsage: 0,
+    weeklyUsage: 0,
+    monthlyUsage: 0,
+    voltage: 0,
+    current: 0,
+    billEstimate: 0,
+    lowVoltage: false,
+    overLimit: false,
+    peakHour: false,
+    unusualSpike: false,
+    lastSyncedAt: new Date().toISOString(),
+    activeDevices: 0,
+    simulationMode: settings?.simulationMode || meta.simulationMode,
+  };
+}
+
 function slugify(value) {
   return String(value || "")
     .toLowerCase()
@@ -321,3 +347,19 @@ export function generateAutoProfile(placeType) {
     settings,
   };
 }
+
+export function createBlankProfile(placeType) {
+  const normalizedPlaceType = normalizePlaceType(placeType);
+  const settings = defaultSettingsForPlace(normalizedPlaceType);
+
+  return {
+    setupCompleted: false,
+    floors: createInitialFloors(normalizedPlaceType),
+    rooms: [],
+    appliances: [],
+    latestMetrics: buildEmptyMetrics(normalizedPlaceType, settings),
+    dailyHistory: [],
+    settings,
+  };
+}
+

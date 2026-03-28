@@ -822,3 +822,45 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Floor-plan performance tuning overrides */
+.floor-room,
+.map-device,
+.floor-tab-chip,
+.blueprint-shell,
+.floor-room-title,
+.map-device-aura,
+.device-energy-flow span {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease, opacity 160ms ease;
+}
+
+.floor-room:hover {
+  transform: translate3d(0, -1px, 0);
+}
+
+.map-device:hover {
+  transform: translate3d(-50%, -50%, 0) scale(1.01);
+}
+
+.map-device:active {
+  transform: translate3d(-50%, -50%, 0) scale(1.05);
+}
+
+.map-device.setup-draggable:hover,
+.map-device.setup-draggable:active {
+  transform: translate3d(-50%, -50%, 0);
+}
+
+@media (pointer: coarse) {
+  .floor-room:hover {
+    transform: none;
+  }
+
+  .map-device:hover,
+  .map-device:active,
+  .map-device.setup-draggable:hover,
+  .map-device.setup-draggable:active {
+    transform: translate3d(-50%, -50%, 0);
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import Navigation from "../components/Navigation";
@@ -12,9 +12,7 @@ import {
   calculateFloorStats,
   calculateRoomStats,
   computeMetrics,
-  createAllDefaultRooms,
-  createDefaultAppliances,
-  createDefaultFloors,
+  createInitialFloors,
   createDevice,
   createInitialHistory,
   deviceStyle,
@@ -191,9 +189,9 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   const initialTheme = session?.settings?.darkMode === false ? "light" : "dark";
   const initialGridSize = session?.settings?.gridSize || placeConfig.gridSize;
   const initialSimulationMode = session?.settings?.simulationMode || placeConfig.simulationMode;
-  const initialFloors = createDefaultFloors(placeType);
-  const initialRooms = createAllDefaultRooms(placeType);
-  const initialAppliances = createDefaultAppliances(initialRooms, placeType);
+  const initialFloors = createInitialFloors(placeType);
+  const initialRooms = [];
+  const initialAppliances = [];
   const initialMetrics = computeMetrics(initialAppliances, null, initialLimit, placeType);
 
   const [activeTab, setActiveTab] = useState("home");
@@ -214,10 +212,14 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   const [roomModal, setRoomModal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [saveStatus, setSaveStatus] = useState("Syncing");
+  const [saveStatus, setSaveStatus] = useState("Saved");
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [profileName, setProfileName] = useState(() => session?.user?.name || "");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileFeedback, setProfileFeedback] = useState({ tone: "", message: "" });
+  const dirtyTimerRef = useRef(0);
+  const metricsInputsRef = useRef({ appliances: initialAppliances, dailyLimit: initialLimit, placeType });
 
   const roomLookup = useMemo(() => Object.fromEntries(rooms.map((room) => [room.id, room])), [rooms]);
   const activeRooms = useMemo(() => filterRoomsByFloor(rooms, activeFloorId), [rooms, activeFloorId]);
@@ -256,9 +258,24 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   useEffect(() => {
     setProfileName(session?.user?.name || "");
   }, [session?.user?.name]);
+
+  useEffect(() => {
+    metricsInputsRef.current = { appliances, dailyLimit, placeType };
+  }, [appliances, dailyLimit, placeType]);
+
+  useEffect(() => () => {
+    if (dirtyTimerRef.current) {
+      window.clearTimeout(dirtyTimerRef.current);
+    }
+  }, []);
+
   useEffect(() => {
     const host = shellRef.current;
     if (!host || typeof window === "undefined") {
+      return undefined;
+    }
+
+    if (window.matchMedia?.("(pointer: coarse)").matches) {
       return undefined;
     }
 
@@ -342,37 +359,44 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
         if (ignore) return;
 
         const nextRooms = normalizeRooms(data.rooms, data.appliances, placeType);
-        const seededRooms = nextRooms.length ? nextRooms : createAllDefaultRooms(placeType);
-        const seededAppliances = mergeSavedAppliances(data.appliances, seededRooms, {
-          preferDefaultsWhenMissing: true,
-        }, placeType);
-        const nextFloors = normalizeFloors(data.floors, seededRooms, seededAppliances, placeType);
-        const nextFloorId = getPreferredFloorId(nextFloors, seededRooms, seededAppliances);
+        const nextAppliances = mergeSavedAppliances(
+          data.appliances,
+          nextRooms,
+          { preferDefaultsWhenMissing: false },
+          placeType
+        );
+        const nextFloors = normalizeFloors(data.floors, nextRooms, nextAppliances, placeType);
+        const nextFloorId = getPreferredFloorId(nextFloors, nextRooms, nextAppliances);
         const nextLimit = data.settings?.dailyLimit || initialLimit;
         const nextTheme = data.settings?.darkMode === false ? "light" : initialTheme;
         const nextGridSize = data.settings?.gridSize || initialGridSize;
         const nextSimulationMode = data.settings?.simulationMode || placeConfig.simulationMode;
-        const seededMetrics = data.latestMetrics?.todayUsage
+        const hasSavedMetrics = Boolean(data.latestMetrics && Object.keys(data.latestMetrics).length);
+        const nextMetrics = hasSavedMetrics
           ? {
               ...data.latestMetrics,
-              activeDevices: seededAppliances.filter((item) => item.on).length,
+              activeDevices: nextAppliances.filter((item) => item.on).length,
               simulationMode: data.latestMetrics?.simulationMode || nextSimulationMode,
             }
-          : computeMetrics(seededAppliances, null, nextLimit, placeType);
-        const seededHistory = data.dailyHistory?.length ? data.dailyHistory.slice(-14) : createInitialHistory(seededMetrics.todayUsage, placeType);
+          : computeMetrics(nextAppliances, null, nextLimit, placeType);
+        const nextHistory = data.dailyHistory?.length
+          ? syncTodayHistory(data.dailyHistory.slice(-14), nextMetrics.todayUsage)
+          : createInitialHistory(nextMetrics.todayUsage, placeType);
 
         setFloors(nextFloors);
-        setRooms(seededRooms);
-        setAppliances(seededAppliances);
+        setRooms(nextRooms);
+        setAppliances(nextAppliances);
         setDailyLimit(nextLimit);
         setTheme(nextTheme);
         setGridSize(nextGridSize);
         setSimulationMode(nextSimulationMode);
-        setMetrics(seededMetrics);
-        setDailyHistory(syncTodayHistory(seededHistory, seededMetrics.todayUsage));
+        setMetrics(nextMetrics);
+        setDailyHistory(nextHistory);
         setActiveFloorId(nextFloorId);
-        setSelectedRoomId(seededRooms.find((room) => room.floorId === nextFloorId)?.id || null);
-        setSaveStatus("Live");
+        setSelectedRoomId(nextRooms.find((room) => room.floorId === nextFloorId)?.id || null);
+        setIsDirty(false);
+        setSaveStatus("Saved");
+        setError("");
       } catch (loadError) {
         if (!ignore) {
           setError(loadError.message);
@@ -392,8 +416,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   }, [session.token, initialLimit, initialTheme, initialGridSize, placeConfig.simulationMode, placeType]);
 
   useEffect(() => {
-    onSettingsChange({ darkMode: theme === "dark", dailyLimit, placeType, gridSize, simulationMode });
-  }, [theme, dailyLimit, placeType, gridSize, simulationMode, onSettingsChange]);
+    onSettingsChange({ darkMode: theme === "dark" });
+  }, [theme, onSettingsChange]);
 
   useEffect(() => {
     if (!activeRooms.length) {
@@ -412,52 +436,94 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
       return undefined;
     }
 
-    const intervalId = setInterval(() => {
+    const intervalId = window.setInterval(() => {
+      const currentInputs = metricsInputsRef.current;
       setMetrics((previous) => {
-        const nextMetrics = computeMetrics(appliances, previous, dailyLimit, placeType);
+        const nextMetrics = computeMetrics(currentInputs.appliances, previous, currentInputs.dailyLimit, currentInputs.placeType);
         setDailyHistory((history) => syncTodayHistory(history, nextMetrics.todayUsage));
         return nextMetrics;
       });
     }, 1000);
 
-    return () => clearInterval(intervalId);
-  }, [appliances, dailyLimit, loading, placeType]);
+    return () => window.clearInterval(intervalId);
+  }, [loading]);
 
-  useEffect(() => {
-    if (loading) {
-      return undefined;
+  const markDirty = useCallback((label = "Unsaved changes") => {
+    setIsDirty(true);
+    if (dirtyTimerRef.current) {
+      window.clearTimeout(dirtyTimerRef.current);
+    }
+    setSaveStatus("Updating locally");
+    dirtyTimerRef.current = window.setTimeout(() => {
+      setSaveStatus(label);
+    }, 1000);
+  }, []);
+
+  const handleManualSave = useCallback(async () => {
+    if (isSaving) {
+      return;
     }
 
-    const saveTimer = setTimeout(async () => {
-      try {
-        setSaveStatus("Syncing");
-        await api.saveUsage(session.token, {
-          floors: serializeFloors(floors),
-          rooms: serializeRooms(rooms),
-          metrics,
-          appliances: serializeAppliances(appliances),
-          dailyHistory,
-          settings: {
-            dailyLimit,
-            darkMode: theme === "dark",
-            placeType,
-            gridSize,
-            simulationMode,
-          },
-          setupCompleted: true,
-        });
-        setSaveStatus("Live");
-      } catch (_error) {
-        setSaveStatus("Offline");
-      }
-    }, 900);
+    if (dirtyTimerRef.current) {
+      window.clearTimeout(dirtyTimerRef.current);
+    }
 
-    return () => clearTimeout(saveTimer);
-  }, [floors, rooms, appliances, dailyLimit, theme, gridSize, simulationMode, dailyHistory, metrics, loading, session.token, placeType]);
+    setIsSaving(true);
+    setError("");
+    setSaveStatus("Saving...");
 
-  function toggleAppliance(deviceId) {
+    const nextMetrics = computeMetrics(appliances, metrics, dailyLimit, placeType);
+    const nextHistory = syncTodayHistory(dailyHistory, nextMetrics.todayUsage);
+
+    setMetrics(nextMetrics);
+    setDailyHistory(nextHistory);
+
+    try {
+      await api.saveUsage(session.token, {
+        floors: serializeFloors(floors),
+        rooms: serializeRooms(rooms),
+        metrics: nextMetrics,
+        appliances: serializeAppliances(appliances),
+        dailyHistory: nextHistory,
+        settings: {
+          dailyLimit,
+          darkMode: theme === "dark",
+          placeType,
+          gridSize,
+          simulationMode,
+        },
+        setupCompleted: true,
+      });
+      onSettingsChange({ darkMode: theme === "dark", dailyLimit, placeType, gridSize, simulationMode });
+      setIsDirty(false);
+      setSaveStatus("Saved");
+    } catch (saveError) {
+      setError(saveError.message || "Unable to save the latest layout changes.");
+      setSaveStatus("Offline");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [appliances, dailyHistory, dailyLimit, floors, gridSize, isSaving, metrics, onSettingsChange, placeType, rooms, session.token, simulationMode, theme]);
+
+  const handleSmoothLogout = useCallback(() => {
+    onLogout();
+    navigate("/login", { replace: true });
+  }, [navigate, onLogout]);
+
+  const handleThemeSelect = useCallback((nextTheme) => {
+    setTheme(nextTheme);
+    markDirty(nextTheme === "dark" ? "Dark mode pending save" : "Light mode pending save");
+  }, [markDirty]);
+
+  const handleDailyLimitChange = useCallback((event) => {
+    setDailyLimit(Number(event.target.value));
+    markDirty("Limit change pending save");
+  }, [markDirty]);
+
+  const toggleAppliance = useCallback((deviceId) => {
     setAppliances((current) => {
       const nextAppliances = current.map((item) => (item.deviceId === deviceId ? { ...item, on: !item.on } : item));
+      metricsInputsRef.current = { appliances: nextAppliances, dailyLimit, placeType };
       setMetrics((previous) => {
         const nextMetrics = computeMetrics(nextAppliances, previous, dailyLimit, placeType);
         setDailyHistory((history) => syncTodayHistory(history, nextMetrics.todayUsage));
@@ -465,9 +531,10 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
       });
       return nextAppliances;
     });
-  }
+    markDirty();
+  }, [dailyLimit, markDirty, placeType]);
 
-  function openRoom(roomId) {
+  const openRoom = useCallback((roomId) => {
     setSelectedRoomId(roomId);
     const room = getRoomById(roomStats, roomId);
     if (room) {
@@ -476,24 +543,23 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
         floorName: activeFloor?.name || "Selected floor",
       });
     }
-  }
+  }, [activeFloor?.name, roomStats]);
 
-  function togglePreference(key) {
+  const togglePreference = useCallback((key) => {
     setNotificationPrefs((current) => ({
       ...current,
       [key]: !current[key],
     }));
-  }
+  }, []);
 
-  function handleFloorChange(floorId) {
+  const handleFloorChange = useCallback((floorId) => {
     setActiveFloorId(floorId);
     setSelectedRoomId(null);
     setRoomModal(null);
-  }
+  }, []);
 
-  function handleAddFloor() {
+  const handleAddFloor = useCallback(() => {
     if (!canAddFloor) {
-      navigate("/setup");
       return;
     }
 
@@ -509,9 +575,10 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     setSelectedRoomId(null);
     setRoomModal(null);
     setActiveTab("home");
-  }
+    markDirty("Floor changes pending save");
+  }, [appliances, canAddFloor, floors, markDirty, placeType, rooms]);
 
-  function applySuggestion(suggestion) {
+  const applySuggestion = useCallback((suggestion) => {
     const orderedRooms = [
       ...activeRooms,
       ...rooms.filter((room) => !activeRooms.some((activeRoom) => activeRoom.id === room.id)),
@@ -527,7 +594,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
       return;
     }
 
-    const template = getAllowedDeviceLibrary(room).find((device) => device.type === suggestion.deviceType);
+    const template = getAllowedDeviceLibrary(room, placeType).find((device) => device.type === suggestion.deviceType);
     if (!template) {
       return;
     }
@@ -552,31 +619,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     setActiveFloorId(room.floorId);
     setSelectedRoomId(room.id);
     setActiveTab("devices");
-  }
-
-  async function handleProfileSave(event) {
-    event.preventDefault();
-    const trimmedName = profileName.trim();
-
-    if (trimmedName.length < 2) {
-      setProfileFeedback({ tone: "error", message: "Username must be at least 2 characters long." });
-      return;
-    }
-
-    setProfileSaving(true);
-    setProfileFeedback({ tone: "", message: "" });
-
-    try {
-      const result = await api.updateUserProfile(session.token, { name: trimmedName });
-      onUserUpdate?.(result.user, result.token);
-      setProfileName(result.user.name);
-      setProfileFeedback({ tone: "info", message: "Profile updated successfully." });
-    } catch (profileError) {
-      setProfileFeedback({ tone: "error", message: profileError.message || "Unable to update profile right now." });
-    } finally {
-      setProfileSaving(false);
-    }
-  }
+    markDirty("Device changes pending save");
+  }, [activeRooms, appliances, markDirty, placeType, rooms]);
 
   function renderFloorSelectorPanel() {
     const renderActionButton = () => (
@@ -1226,12 +1270,12 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
             </div>
 
             <div className="theme-choice-grid">
-              <button type="button" className={`theme-choice-card ${theme === "dark" ? "active" : ""}`} onClick={() => setTheme("dark")}>
+              <button type="button" className={`theme-choice-card ${theme === "dark" ? "active" : ""}`} onClick={() => handleThemeSelect("dark")}>
                 <span className="theme-choice-badge">Default</span>
                 <strong>Dark mode</strong>
                 <span>Matte black surfaces with cinematic amber highlights for focused monitoring.</span>
               </button>
-              <button type="button" className={`theme-choice-card ${theme === "light" ? "active" : ""}`} onClick={() => setTheme("light")}>
+              <button type="button" className={`theme-choice-card ${theme === "light" ? "active" : ""}`} onClick={() => handleThemeSelect("light")}>
                 <span className="theme-choice-badge">Bright</span>
                 <strong>Light mode</strong>
                 <span>Clean white panels with the same solar amber accent for a crisp daytime view.</span>
@@ -1253,7 +1297,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
             <div className="settings-stack">
               <label className="settings-control">
                 <span>Daily usage limit</span>
-                <input type="range" min="10" max={placeType === "industry" ? 800 : placeType === "school" ? 250 : placeType === "office" ? 180 : 60} value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
+                <input type="range" min="10" max={placeType === "industry" ? 800 : placeType === "school" ? 250 : placeType === "office" ? 180 : 60} value={dailyLimit} onChange={handleDailyLimitChange} />
                 <strong>{dailyLimit} kWh</strong>
               </label>
 
@@ -1263,6 +1307,10 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
                   <span>{floors.length} floors, {rooms.length} rooms, and {appliances.length} devices saved in your {placeConfig.label.toLowerCase()} layout.</span>
                 </div>
                 <span className="theme-switch active">Open</span>
+              </button>
+
+              <button type="button" className="primary-button wide-button" onClick={handleManualSave} disabled={isSaving || (!isDirty && saveStatus === "Saved")}>
+                {isSaving ? "Saving layout..." : isDirty ? "Save layout changes" : "All changes saved"}
               </button>
             </div>
           </article>
@@ -1296,7 +1344,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   return (
     <div ref={shellRef} className={`dashboard-shell ${theme === "dark" ? "dark-surface" : "light-surface"}`}>
       <div className="cursor-glow" aria-hidden="true" />
-      <Navigation activeTab={activeTab} onChange={setActiveTab} onLogout={onLogout} userName={session.user.name} />
+      <Navigation activeTab={activeTab} onChange={setActiveTab} onLogout={handleSmoothLogout} userName={session.user.name} />
 
       <main className="dashboard-main">
         <header className="topbar panel cinematic-topbar">
@@ -1309,8 +1357,11 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
           <div className="topbar-actions">
             <div className="status-card status-card-glow">
               <strong>{saveStatus}</strong>
-              <span>Data sync</span>
+              <span>{isDirty ? "Manual save required" : "Layout state"}</span>
             </div>
+            <button type="button" className="primary-button" onClick={handleManualSave} disabled={isSaving || (!isDirty && saveStatus === "Saved")}>
+              {isSaving ? "Saving..." : isDirty ? "Save layout" : "Saved"}
+            </button>
           </div>
         </header>
 
@@ -1327,6 +1378,10 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     </div>
   );
 }
+
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { api } from "./utils/api";
 import { clearSession, loadSession, saveSession } from "./utils/session";
@@ -61,7 +61,7 @@ export default function App() {
     };
   }, []);
 
-  function handleAuthSuccess(payload) {
+  const handleAuthSuccess = useCallback((payload) => {
     const nextSession = {
       token: payload.token,
       user: payload.user,
@@ -71,65 +71,73 @@ export default function App() {
 
     setSession(nextSession);
     saveSession(nextSession);
-  }
+    setBooting(false);
+  }, []);
 
-  function handleLogout() {
+  const handleLogout = useCallback(() => {
     clearSession();
+    setBooting(false);
     setSession(null);
-  }
+  }, []);
 
-  function handleSettingsChange(partialSettings) {
-    if (!session) {
-      return;
-    }
+  const handleSettingsChange = useCallback((partialSettings) => {
+    setSession((current) => {
+      if (!current) {
+        return current;
+      }
 
-    const nextSession = {
-      ...session,
-      settings: {
-        ...(session.settings || {}),
-        ...partialSettings,
-      },
-    };
+      const nextSession = {
+        ...current,
+        settings: {
+          ...(current.settings || {}),
+          ...partialSettings,
+        },
+      };
 
-    setSession(nextSession);
-    saveSession(nextSession);
-  }
+      saveSession(nextSession);
+      return nextSession;
+    });
+  }, []);
 
-  function handleUserUpdate(partialUser, nextToken) {
-    if (!session) {
-      return;
-    }
+  const handleUserUpdate = useCallback((partialUser, nextToken) => {
+    setSession((current) => {
+      if (!current) {
+        return current;
+      }
 
-    const nextSession = {
-      ...session,
-      token: nextToken || session.token,
-      user: {
-        ...(session.user || {}),
-        ...partialUser,
-      },
-    };
+      const nextSession = {
+        ...current,
+        token: nextToken || current.token,
+        user: {
+          ...(current.user || {}),
+          ...partialUser,
+        },
+      };
 
-    setSession(nextSession);
-    saveSession(nextSession);
-  }
+      saveSession(nextSession);
+      return nextSession;
+    });
+  }, []);
 
-  function handleSetupComplete(partial = {}) {
-    if (!session) {
-      return;
-    }
+  const handleSetupComplete = useCallback((partial = {}) => {
+    setSession((current) => {
+      if (!current) {
+        return current;
+      }
 
-    const nextSession = {
-      ...session,
-      setupCompleted: true,
-      settings: {
-        ...(session.settings || {}),
-        ...(partial.settings || {}),
-      },
-    };
+      const nextSession = {
+        ...current,
+        setupCompleted: true,
+        settings: {
+          ...(current.settings || {}),
+          ...(partial.settings || {}),
+        },
+      };
 
-    setSession(nextSession);
-    saveSession(nextSession);
-  }
+      saveSession(nextSession);
+      return nextSession;
+    });
+  }, []);
 
   if (booting) {
     return (

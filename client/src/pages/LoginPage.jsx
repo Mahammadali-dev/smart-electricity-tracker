@@ -33,16 +33,16 @@ export default function LoginPage({ onSuccess }) {
     <div className="auth-shell">
       <section className="auth-hero">
         <span className="section-tag">Smart electricity management</span>
-        <h1>Monitor live power, control every floor, and let AI shape the energy system around your place type.</h1>
+        <h1>Monitor live power, design every floor your way, and keep the full energy system under control.</h1>
         <p>
-          Home, school, office, and industrial profiles each get a tailored multi-floor layout, smart device mix,
-          peak-hour simulation, and live alerts from one secure dashboard.
+          Home, school, office, and industrial profiles start with the right floor scale and smart defaults, but the
+          final room map and device placement stay in your hands.
         </p>
 
         <div className="auth-points">
           <article className="panel mini-panel">
-            <strong>AI-assisted layout</strong>
-            <span>Auto-generated rooms, floors, and device suggestions appear as soon as you sign up.</span>
+            <strong>Manual smart layout</strong>
+            <span>Start from a clean blueprint, then draw rooms and place only the devices you actually want.</span>
           </article>
           <article className="panel mini-panel">
             <strong>Realtime simulation</strong>

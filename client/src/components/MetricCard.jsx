@@ -1,4 +1,6 @@
-export default function MetricCard({ label, value, note, tone = "default" }) {
+import { memo } from "react";
+
+function MetricCard({ label, value, note, tone = "default" }) {
   return (
     <article className={`metric-card cinematic-card ${tone}`}>
       <span>{label}</span>
@@ -7,3 +9,5 @@ export default function MetricCard({ label, value, note, tone = "default" }) {
     </article>
   );
 }
+
+export default memo(MetricCard);

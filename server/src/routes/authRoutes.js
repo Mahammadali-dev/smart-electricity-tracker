@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
 import { UsageProfile } from "../models/UsageProfile.js";
 import { authenticateToken } from "../middleware/auth.js";
-import { defaultSettingsForPlace, generateAutoProfile, normalizePlaceType } from "../utils/placeAutoConfig.js";
+import { createBlankProfile, defaultSettingsForPlace, normalizePlaceType } from "../utils/placeAutoConfig.js";
 
 const router = express.Router();
 
@@ -103,16 +103,14 @@ router.post("/signup", async (req, res) => {
       password: passwordHash,
       placeType: normalizedPlaceType,
     });
-
-    const autoProfile = generateAutoProfile(normalizedPlaceType);
-    const profile = await UsageProfile.create({ user: user._id, ...autoProfile });
+    const profile = await UsageProfile.create({ user: user._id, ...createBlankProfile(normalizedPlaceType) });
     const token = createToken(user);
 
     return res.status(201).json({
       token,
       user: serializeUser(user),
       settings: profileSettings(profile, normalizedPlaceType),
-      setupCompleted: true,
+      setupCompleted: false,
     });
   } catch (error) {
     console.error("Signup error", error);
@@ -199,3 +197,5 @@ router.patch("/user-profile", authenticateToken, async (req, res) => {
 });
 
 export default router;
+
+

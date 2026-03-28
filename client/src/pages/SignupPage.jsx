@@ -43,16 +43,16 @@ export default function SignupPage({ onSuccess }) {
     <div className="auth-shell">
       <section className="auth-hero">
         <span className="section-tag">AI-assisted setup</span>
-        <h1>Pick your place type, tell us your name, and launch a ready-made smart electricity system instantly.</h1>
+        <h1>Pick your place type, save your name, and start with a smart blank energy workspace.</h1>
         <p>
-          Your place type drives the auto-generated floors, room map, device mix, grid scale, and simulation profile.
-          Your username personalizes the live dashboard and settings from the first session.
+          Your place type sets the right floor scale, limits, and simulation profile, while your layout stays empty
+          until you draw rooms and place devices yourself.
         </p>
 
         <div className="auth-points">
           <article className="panel mini-panel">
             <strong>{selectedPlace.label} blueprint</strong>
-            <span>{selectedPlace.description}</span>
+            <span>Start with the right floor size and usage profile, then build the layout room by room.</span>
           </article>
           <article className="panel mini-panel">
             <strong>{selectedPlace.gridSize}px smart grid</strong>
@@ -70,7 +70,7 @@ export default function SignupPage({ onSuccess }) {
           <div>
             <span className="section-tag">Smart signup</span>
             <h2>Create account</h2>
-            <p>Choose your place type, save your username, and step into a personalized smart energy dashboard.</p>
+            <p>Choose your place type, save your username, and open a personalized smart workspace with a blank editable layout.</p>
           </div>
         </div>
 

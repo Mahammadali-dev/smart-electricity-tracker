@@ -95,7 +95,6 @@ const usageProfileSchema = new mongoose.Schema(
       type: [floorSchema],
       default: [
         { id: "floor-1", name: "Floor 1" },
-        { id: "floor-2", name: "Floor 2" },
       ],
     },
     rooms: {
@@ -125,3 +124,6 @@ const usageProfileSchema = new mongoose.Schema(
 );
 
 export const UsageProfile = mongoose.model("UsageProfile", usageProfileSchema);
+
+
+

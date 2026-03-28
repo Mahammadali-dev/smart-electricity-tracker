@@ -6,8 +6,7 @@ import MetricCard from "../components/MetricCard";
 import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
-  createAllDefaultRooms,
-  createDefaultFloors,
+  createInitialFloors,
   filterDevicesByFloor,
   filterRoomsByFloor,
   getAllowedDeviceLibrary,
@@ -85,7 +84,7 @@ function buildFloorRecord(index, placeType) {
   };
 }
 
-export default function SetupPage({ session, onLogout, onSetupComplete, onSettingsChange }) {
+export default function SetupPage({ session, onLogout, onSetupComplete }) {
   const navigate = useNavigate();
   const placeType = normalizePlaceType(session?.user?.placeType || session?.settings?.placeType);
   const placeConfig = getPlaceConfig(placeType);
@@ -93,6 +92,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const aiSuggestions = useMemo(() => getAiSuggestions(placeType), [placeType]);
   const isDarkMode = session?.settings?.darkMode !== false;
   const initialLimit = session?.settings?.dailyLimit || placeConfig.dailyLimit;
+  const initialFloors = useMemo(() => createInitialFloors(placeType), [placeType]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -103,8 +103,8 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const [gridSize, setGridSize] = useState(session?.settings?.gridSize || placeConfig.gridSize);
   const [roomType, setRoomType] = useState(roomLibrary[0]?.key || "custom");
   const [customRoomName, setCustomRoomName] = useState("Innovation Room");
-  const [floors, setFloors] = useState(() => createDefaultFloors(placeType));
-  const [activeFloorId, setActiveFloorId] = useState(createDefaultFloors(placeType)[0]?.id || "floor-1");
+  const [floors, setFloors] = useState(() => initialFloors);
+  const [activeFloorId, setActiveFloorId] = useState(initialFloors[0]?.id || "floor-1");
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState(null);
@@ -126,6 +126,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const customRoomNameRef = useRef(customRoomName);
   const activeFloorRef = useRef(activeFloorId);
 
+  const deviceLoadSignature = useMemo(() => devices.map((device) => `${device.deviceId}:${device.on ? 1 : 0}:${device.watts}:${device.dailyHours}`).join("|"), [devices]);
   const activeRooms = useMemo(() => filterRoomsByFloor(rooms, activeFloorId), [rooms, activeFloorId]);
   const activeDevices = useMemo(() => filterDevicesByFloor(devices, activeFloorId), [devices, activeFloorId]);
   const roomStats = useMemo(() => calculateRoomStats(activeRooms, activeDevices), [activeRooms, activeDevices]);
@@ -150,10 +151,9 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       try {
         const data = await api.getLayout(session.token);
         if (ignore) return;
-        const loadedRooms = normalizeRooms(data.rooms, data.appliances || data.devices, placeType);
-        const nextRooms = loadedRooms.length ? loadedRooms : createAllDefaultRooms(placeType);
+        const nextRooms = normalizeRooms(data.rooms, data.appliances || data.devices, placeType);
         const nextDevices = mergeSavedAppliances(data.appliances || data.devices, nextRooms, {
-          preferDefaultsWhenMissing: true,
+          preferDefaultsWhenMissing: false,
         }, placeType);
         const nextFloors = normalizeFloors(data.floors, nextRooms, nextDevices, placeType);
         const nextLimit = data.settings?.dailyLimit || initialLimit;
@@ -184,17 +184,13 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   }, [session.token, initialLimit, placeType, placeConfig.gridSize, placeConfig.simulationMode]);
 
   useEffect(() => {
-    onSettingsChange({ dailyLimit, placeType, gridSize, simulationMode: placeConfig.simulationMode });
-  }, [dailyLimit, placeType, gridSize, placeConfig.simulationMode, onSettingsChange]);
-
-  useEffect(() => {
     if (loading) return;
     setMetrics((previous) => {
       const nextMetrics = computeMetrics(devices, previous, dailyLimit, placeType);
       setDailyHistory((history) => syncTodayHistory(history, nextMetrics.todayUsage));
       return nextMetrics;
     });
-  }, [devices, dailyLimit, loading, placeType]);
+  }, [deviceLoadSignature, dailyLimit, loading, placeType]);
 
   useEffect(() => {
     if (!activeRooms.length) {
@@ -249,10 +245,10 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     Object.assign(deviceEl.style, deviceStyle(candidate));
   }
 
-  function getBoardPoint(event) {
+  function getBoardPoint(event, cachedRect) {
     const board = boardRef.current;
     if (!board) return null;
-    const rect = board.getBoundingClientRect();
+    const rect = cachedRect || board.getBoundingClientRect();
     return {
       x: clamp(((event.clientX - rect.left) / rect.width) * BOARD_WIDTH, 0, BOARD_WIDTH),
       y: clamp(((event.clientY - rect.top) / rect.height) * BOARD_HEIGHT, 0, BOARD_HEIGHT),
@@ -348,7 +344,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   useEffect(() => {
     function handlePointerMove(event) {
       if (!interactionRef.current) return;
-      pendingPointRef.current = getBoardPoint(event);
+      pendingPointRef.current = getBoardPoint(event, interactionRef.current?.rect);
       if (!rafRef.current) rafRef.current = window.requestAnimationFrame(flushInteraction);
     }
 
@@ -402,7 +398,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
       clearTransient();
     }
 
-    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
     window.addEventListener("pointerup", handlePointerUp);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
@@ -412,7 +408,8 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
 
   function handleBoardPointerDown(event) {
     if (loading || !boardRef.current) return;
-    const point = getBoardPoint(event);
+    const rect = boardRef.current.getBoundingClientRect();
+    const point = getBoardPoint(event, rect);
     if (!point) return;
 
     const resizeHandle = event.target.closest("[data-room-resize]");
@@ -430,6 +427,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         roomId: device.roomId,
         name: device.name,
         originPlacement: { xPct: device.xPct, yPct: device.yPct },
+        rect,
         candidate: null,
         valid: true,
       };
@@ -447,6 +445,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         corner: resizeHandle.dataset.corner,
         start: point,
         origin: { x: room.x, y: room.y, width: room.width, height: room.height },
+        rect,
         candidate: null,
         valid: true,
       };
@@ -464,6 +463,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         roomId,
         start: point,
         origin: { x: room.x, y: room.y, width: room.width, height: room.height },
+        rect,
         candidate: null,
         valid: true,
       };
@@ -477,7 +477,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     }
 
     if (step !== 1 || roomNode) return;
-    interactionRef.current = { type: "draw", start: point, candidate: null, valid: false };
+    interactionRef.current = { type: "draw", start: point, rect, candidate: null, valid: false };
     event.preventDefault();
   }
 
@@ -649,7 +649,7 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
         settings: { dailyLimit, darkMode: isDarkMode, placeType, gridSize, simulationMode: placeConfig.simulationMode },
         setupCompleted: true,
       });
-      onSetupComplete({ settings: { dailyLimit, darkMode: theme === "dark", placeType, gridSize, simulationMode: placeConfig.simulationMode } });
+      onSetupComplete({ settings: { dailyLimit, darkMode: isDarkMode, placeType, gridSize, simulationMode: placeConfig.simulationMode } });
       navigate("/dashboard", { replace: true });
     } catch (saveError) {
       setError(saveError.message || "Unable to save layout.");
@@ -673,11 +673,11 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
           <div>
             <span className="section-tag">AI-assisted layout editor</span>
             <h2>{placeConfig.label} energy blueprint</h2>
-            <p>AI already prepared the floors, rooms, and device mix for this {placeConfig.label.toLowerCase()} setup. Fine-tune the layout, then sync it back to the live dashboard.</p>
+            <p>Start from a blank layout, draw rooms manually, place only the devices you want, and save the finished map when you are ready.</p>
           </div>
           <div className="topbar-actions">
             {session?.setupCompleted ? <button type="button" className="ghost-button" onClick={() => navigate("/dashboard")}>Dashboard</button> : null}
-            <button type="button" className="ghost-button" onClick={onLogout}>Logout</button>
+            <button type="button" className="ghost-button" onClick={() => { onLogout(); navigate("/login", { replace: true }); }}>Logout</button>
           </div>
         </header>
 
@@ -1011,6 +1011,13 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     </div>
   );
 }
+
+
+
+
+
+
+
 
 
 

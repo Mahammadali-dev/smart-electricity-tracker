@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 const VIEW_WIDTH = 360;
 const VIEW_HEIGHT = 220;
@@ -30,7 +30,7 @@ function buildAreaPath(points, viewWidth) {
   return `${buildLinePath(points)} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
 }
 
-export default function ChartPanel({ title, subtitle, data, accent = "amber", hint = "Swipe the graph to inspect exact values." }) {
+const ChartPanel = memo(function ChartPanel({ title, subtitle, data, accent = "amber", hint = "Swipe the graph to inspect exact values." }) {
   const chartRef = useRef(null);
   const [activeIndex, setActiveIndex] = useState(() => Math.max(0, (data?.values?.length || 1) - 1));
 
@@ -213,4 +213,6 @@ export default function ChartPanel({ title, subtitle, data, accent = "amber", hi
       </div>
     </article>
   );
-}
+});
+
+export default ChartPanel;
