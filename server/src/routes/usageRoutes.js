@@ -2,6 +2,7 @@ import express from "express";
 import { authenticateToken } from "../middleware/auth.js";
 import { UsageProfile } from "../models/UsageProfile.js";
 import { createBlankProfile, defaultSettingsForPlace, normalizePlaceType } from "../utils/placeAutoConfig.js";
+import { simulateBatch, simulateDevice } from "../utils/simulator.js";
 
 const router = express.Router();
 
@@ -120,6 +121,62 @@ function defaultPayload(placeType = "home") {
   return createBlankProfile(placeType);
 }
 
+function parseBooleanQuery(value, fallback = false) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+router.post(["/simulator/batch", "/api/simulator/batch"], authenticateToken, async (req, res) => {
+  try {
+    const devices = sanitizeAppliances(req.body.devices || req.body.appliances || []);
+    const placeType = normalizePlaceType(req.body.placeType || req.user.placeType);
+    return res.json(simulateBatch(devices, placeType));
+  } catch (error) {
+    console.error("Simulator batch error", error);
+    return res.status(500).json({ message: "Unable to stream simulator data." });
+  }
+});
+
+router.get(["/simulator/:deviceType", "/api/simulator/:deviceType"], authenticateToken, async (req, res) => {
+  try {
+    const placeType = normalizePlaceType(req.query.placeType || req.user.placeType);
+    const snapshot = simulateDevice(
+      {
+        deviceId: req.query.deviceId || `${req.params.deviceType}-sim`,
+        type: req.params.deviceType,
+        name: req.query.name || req.params.deviceType,
+        roomId: req.query.roomId || "",
+        floorId: req.query.floorId || "floor-1",
+        watts: Number(req.query.watts) || 0,
+        on: parseBooleanQuery(req.query.on, true),
+      },
+      placeType
+    );
+
+    return res.json({
+      device: snapshot,
+      summary: {
+        totalPower: snapshot.power,
+        liveLoadKw: Number((snapshot.power / 1000).toFixed(2)),
+        totalCurrent: snapshot.current,
+        averageVoltage: snapshot.voltage,
+        activeDevices: snapshot.active ? 1 : 0,
+        warningCount: snapshot.warning ? 1 : 0,
+        lowVoltage: snapshot.lowVoltage,
+        unusualSpike: snapshot.spike,
+        thresholdWatts: simulateBatch([], placeType).summary.thresholdWatts,
+        updatedAt: snapshot.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Simulator device error", error);
+    return res.status(500).json({ message: "Unable to stream device simulator data." });
+  }
+});
+
 router.post("/save-usage", authenticateToken, async (req, res) => {
   try {
     const settings = sanitizeSettings(req.body.settings, req.user.placeType);
@@ -227,3 +284,4 @@ router.get("/get-layout", authenticateToken, async (req, res) => {
 });
 
 export default router;
+

@@ -218,8 +218,12 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   const [profileName, setProfileName] = useState(() => session?.user?.name || "");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileFeedback, setProfileFeedback] = useState({ tone: "", message: "" });
+  const [simulatorMap, setSimulatorMap] = useState({});
+  const [simulatorSummary, setSimulatorSummary] = useState(null);
+  const [simulatorError, setSimulatorError] = useState("");
   const dirtyTimerRef = useRef(0);
   const metricsInputsRef = useRef({ appliances: initialAppliances, dailyLimit: initialLimit, placeType });
+  const simulatorInputsRef = useRef({ appliances: serializeAppliances(initialAppliances), placeType });
 
   const roomLookup = useMemo(() => Object.fromEntries(rooms.map((room) => [room.id, room])), [rooms]);
   const activeRooms = useMemo(() => filterRoomsByFloor(rooms, activeFloorId), [rooms, activeFloorId]);
@@ -237,13 +241,28 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   const deviceComparison = useMemo(() => buildDeviceComparison(appliances, rooms, floors, placeType), [appliances, rooms, floors, placeType]);
   const viewMetrics = displayMetrics;
   const remainingUsage = Math.max(0, dailyLimit - viewMetrics.todayUsage);
-  const livePowerWatts = Math.round(viewMetrics.liveLoadKw * 1000);
-  const liveWarningThreshold = useMemo(() => getLiveWarningThreshold(placeType), [placeType]);
-  const highUsageActiveCount = useMemo(() => activeAppliances.filter((device) => device.on && device.highUsage).length, [activeAppliances]);
-  const activeDeviceFeed = useMemo(() => activeAppliances.slice().sort((left, right) => (Number(right.on) - Number(left.on)) || right.watts - left.watts).slice(0, 8), [activeAppliances]);
+  const fallbackWarningThreshold = useMemo(() => getLiveWarningThreshold(placeType), [placeType]);
+  const liveWarningThreshold = simulatorSummary?.thresholdWatts || fallbackWarningThreshold;
+  const livePowerWatts = Math.round(simulatorSummary?.totalPower ?? viewMetrics.liveLoadKw * 1000);
+  const liveLoadKw = Number((simulatorSummary?.liveLoadKw ?? livePowerWatts / 1000).toFixed(2));
+  const liveVoltage = Math.round(simulatorSummary?.averageVoltage ?? viewMetrics.voltage ?? 0);
+  const liveCurrent = Number(Number(simulatorSummary?.totalCurrent ?? viewMetrics.current ?? 0).toFixed(2));
+  const simulatorWarningCount = simulatorSummary?.warningCount || 0;
+  const highUsageActiveCount = useMemo(() => {
+    const liveWarnings = activeAppliances.filter((device) => simulatorMap[device.deviceId]?.warning).length;
+    return liveWarnings || activeAppliances.filter((device) => device.on && device.highUsage).length;
+  }, [activeAppliances, simulatorMap]);
+  const activeDeviceFeed = useMemo(() => activeAppliances.slice().sort((left, right) => {
+    const rightPower = simulatorMap[right.deviceId]?.power ?? (right.on ? right.watts : 0);
+    const leftPower = simulatorMap[left.deviceId]?.power ?? (left.on ? left.watts : 0);
+    return (Number(right.on) - Number(left.on)) || rightPower - leftPower;
+  }).slice(0, 8), [activeAppliances, simulatorMap]);
   const maxFloorWatts = useMemo(() => Math.max(...floorStats.map((floor) => floor.activeWatts), 1), [floorStats]);
-  const warningActive = viewMetrics.lowVoltage || viewMetrics.unusualSpike || livePowerWatts > liveWarningThreshold;
-  const floorLoadRatio = Math.min(100, Math.round((livePowerWatts / liveWarningThreshold) * 100));
+  const warningActive = Boolean(simulatorSummary?.lowVoltage || simulatorSummary?.unusualSpike || simulatorWarningCount || viewMetrics.lowVoltage || viewMetrics.unusualSpike || livePowerWatts > liveWarningThreshold);
+  const floorLoadRatio = Math.min(100, Math.round((livePowerWatts / Math.max(liveWarningThreshold, 1)) * 100));
+  const simulatorConnected = Boolean(simulatorSummary?.updatedAt) && !simulatorError;
+  const simulatorStatusLabel = simulatorError ? "Simulator reconnecting" : simulatorConnected ? "Simulator live" : "Simulator idle";
+  const simulatorStatusTone = simulatorError || warningActive ? "danger" : "ok";
   const maxFloorCount = useMemo(() => getMaxFloorCount(placeType), [placeType]);
   const canAddFloor = floors.length < maxFloorCount;
   const activeDeviceCards = useMemo(() => {
@@ -262,6 +281,13 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   useEffect(() => {
     metricsInputsRef.current = { appliances, dailyLimit, placeType };
   }, [appliances, dailyLimit, placeType]);
+
+  useEffect(() => {
+    simulatorInputsRef.current = {
+      appliances: serializeAppliances(appliances),
+      placeType,
+    };
+  }, [appliances, placeType]);
 
   useEffect(() => () => {
     if (dirtyTimerRef.current) {
@@ -447,6 +473,48 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
 
     return () => window.clearInterval(intervalId);
   }, [loading]);
+
+  useEffect(() => {
+    if (loading) {
+      return undefined;
+    }
+
+    let ignore = false;
+    let timerId = 0;
+
+    const pollSimulator = async () => {
+      try {
+        const currentInputs = simulatorInputsRef.current;
+        const data = await api.getSimulatorBatch(session.token, {
+          devices: currentInputs.appliances,
+          placeType: currentInputs.placeType,
+        });
+
+        if (ignore) {
+          return;
+        }
+
+        setSimulatorMap(data.devices || {});
+        setSimulatorSummary(data.summary || null);
+        setSimulatorError("");
+      } catch (streamError) {
+        if (!ignore) {
+          setSimulatorError(streamError.message || "Simulator stream unavailable.");
+        }
+      } finally {
+        if (!ignore) {
+          timerId = window.setTimeout(pollSimulator, 1000);
+        }
+      }
+    };
+
+    pollSimulator();
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timerId);
+    };
+  }, [loading, session.token]);
 
   const markDirty = useCallback((label = "Unsaved changes") => {
     setIsDirty(true);
@@ -748,33 +816,41 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
         </div>
         {room.overloaded ? <span className="floor-room-warning">!</span> : null}
         <div className="floor-room-devices">
-          {room.devices.map((device) => (
-            <button
-              key={device.deviceId}
-              type="button"
-              className={`map-device ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""}`}
-              style={deviceStyle(device)}
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleAppliance(device.deviceId);
-              }}
-            >
-              <span className="map-device-aura" aria-hidden="true" />
-              {device.on ? (
-                <span className="device-energy-flow" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
+          {room.devices.map((device) => {
+            const liveSnapshot = simulatorMap[device.deviceId];
+            const livePower = liveSnapshot ? Math.round(liveSnapshot.power) : device.on ? device.watts : 0;
+            const deviceVoltage = liveSnapshot ? Math.round(liveSnapshot.voltage) : liveVoltage;
+            const deviceCurrent = liveSnapshot ? Number(liveSnapshot.current || 0) : 0;
+
+            return (
+              <button
+                key={device.deviceId}
+                type="button"
+                className={`map-device ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""} ${liveSnapshot?.warning ? "warning" : ""}`}
+                style={deviceStyle(device)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleAppliance(device.deviceId);
+                }}
+              >
+                <span className="map-device-aura" aria-hidden="true" />
+                {device.on ? (
+                  <span className="device-energy-flow" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                ) : null}
+                <span className="map-device-icon">
+                  <ApplianceIcon type={device.type} />
                 </span>
-              ) : null}
-              <span className="map-device-icon">
-                <ApplianceIcon type={device.type} />
-              </span>
-              <strong>{device.name}</strong>
-              <span className="device-watts">{device.watts}W</span>
-              <span className={`device-state ${device.on ? "on" : "off"}`}>{device.on ? "ON" : "OFF"}</span>
-            </button>
-          ))}
+                <strong>{device.name}</strong>
+                <span className="device-watts">{livePower}W</span>
+                <span className="device-live-inline">{deviceVoltage}V | {formatNumber(deviceCurrent, 1)}A</span>
+                <span className={`device-state ${device.on ? "on" : "off"}`}>{device.on ? "ON" : "OFF"}</span>
+              </button>
+            );
+          })}
         </div>
       </article>
     ));
@@ -789,31 +865,53 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
             <h3>{title}</h3>
             <p>{subtitle}</p>
           </div>
+          <span className={`status-pill ${simulatorStatusTone}`}>{simulatorStatusLabel}</span>
         </div>
 
         <div className="device-card-grid">
           {items.length ? (
-            items.map((device) => (
-              <button
-                key={device.deviceId}
-                type="button"
-                className={`device-quick-card ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""}`}
-                onClick={() => toggleAppliance(device.deviceId)}
-              >
-                <div className="device-quick-head">
-                  <span className="icon-pill compact">
-                    <ApplianceIcon type={device.type} />
-                  </span>
-                  <span className={`toggle-pill ${device.on ? "on" : "off"}`}>{device.on ? "ON" : "OFF"}</span>
-                </div>
-                <strong>{device.name}</strong>
-                <span className="device-quick-room">{roomLookup[device.roomId]?.name || device.room || activeFloor?.name || "Unassigned room"}</span>
-                <div className="device-quick-meta">
-                  <span>{device.watts}W</span>
-                  <small>{device.on ? "Tap to power down" : "Tap to power on"}</small>
-                </div>
-              </button>
-            ))
+            items.map((device) => {
+              const liveSnapshot = simulatorMap[device.deviceId];
+              const livePower = liveSnapshot ? Math.round(liveSnapshot.power) : device.on ? device.watts : 0;
+              const deviceVoltage = liveSnapshot ? Math.round(liveSnapshot.voltage) : liveVoltage;
+              const deviceCurrent = liveSnapshot ? Number(liveSnapshot.current || 0) : 0;
+
+              return (
+                <button
+                  key={device.deviceId}
+                  type="button"
+                  className={`device-quick-card ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""} ${liveSnapshot?.warning ? "warning" : ""}`}
+                  onClick={() => toggleAppliance(device.deviceId)}
+                >
+                  <div className="device-quick-head">
+                    <span className="icon-pill compact">
+                      <ApplianceIcon type={device.type} />
+                    </span>
+                    <span className={`toggle-pill ${device.on ? "on" : "off"}`}>{device.on ? "ON" : "OFF"}</span>
+                  </div>
+                  <strong>{device.name}</strong>
+                  <span className="device-quick-room">{roomLookup[device.roomId]?.name || device.room || activeFloor?.name || "Unassigned room"}</span>
+                  <div className="device-live-grid">
+                    <span className="device-live-chip">
+                      <strong>{livePower}</strong>
+                      <small>W</small>
+                    </span>
+                    <span className="device-live-chip">
+                      <strong>{deviceVoltage}</strong>
+                      <small>V</small>
+                    </span>
+                    <span className="device-live-chip">
+                      <strong>{formatNumber(deviceCurrent, 1)}</strong>
+                      <small>A</small>
+                    </span>
+                  </div>
+                  <div className="device-quick-meta device-quick-meta-live">
+                    <span>{liveSnapshot?.warningText || (device.on ? "Live simulator online" : "Simulator idle")}</span>
+                    <small>{device.on ? "Live data refreshes every second" : "Toggle on to start live flow"}</small>
+                  </div>
+                </button>
+              );
+            })
           ) : (
             <article className="device-empty-card">
               <strong>{emptyTitle}</strong>
@@ -863,9 +961,9 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
           <div>
             <span className="section-tag">Live energy</span>
             <h3>{formatInteger(livePowerWatts)} W total draw</h3>
-            <p>Device demand, peak-hour pressure, and overload conditions refresh every second.</p>
+            <p>{simulatorError ? "Live simulator is reconnecting to the backend stream." : "Voltage, current, and power readings refresh every second for each active device."}</p>
           </div>
-          <span className={`status-pill ${warningActive ? "danger" : "ok"}`}>{warningActive ? "Attention" : "Stable flow"}</span>
+          <span className={`status-pill ${simulatorStatusTone}`}>{simulatorStatusLabel}</span>
         </div>
 
         <div className="energy-orb-section">
@@ -873,11 +971,11 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
             <span className="energy-core-ring energy-core-ring-one" />
             <span className="energy-core-ring energy-core-ring-two" />
             <span className="energy-core-ring energy-core-ring-three" />
-            <strong>{formatNumber(viewMetrics.liveLoadKw, 2)}</strong>
+            <strong>{formatNumber(liveLoadKw, 2)}</strong>
             <small>kW live</small>
           </div>
           <div className="energy-orb-copy">
-            <strong>{viewMetrics.activeDevices} active devices</strong>
+            <strong>{simulatorSummary?.activeDevices ?? viewMetrics.activeDevices} active devices</strong>
             <span>{activeFloor?.name || "Current floor"} is carrying {formatInteger(activeFloorData?.activeWatts || 0)}W right now.</span>
           </div>
         </div>
@@ -889,14 +987,19 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
             <small>Usage window reacts in real time</small>
           </article>
           <article className="energy-stat-card">
-            <span>Heavy devices</span>
-            <strong>{highUsageActiveCount}</strong>
-            <small>Amber-highlighted high consumption loads</small>
+            <span>Live current</span>
+            <strong>{formatNumber(liveCurrent, 2)}A</strong>
+            <small>Total streamed current draw</small>
           </article>
           <article className="energy-stat-card">
             <span>Voltage</span>
-            <strong>{viewMetrics.voltage}V</strong>
-            <small>{viewMetrics.lowVoltage ? "Low voltage watch" : "Line stable"}</small>
+            <strong>{liveVoltage}V</strong>
+            <small>{simulatorSummary?.lowVoltage || viewMetrics.lowVoltage ? "Low voltage watch" : "Line stable"}</small>
+          </article>
+          <article className="energy-stat-card">
+            <span>Live alerts</span>
+            <strong>{simulatorWarningCount}</strong>
+            <small>{simulatorWarningCount ? "Devices need attention" : "No active warnings"}</small>
           </article>
           <article className="energy-stat-card">
             <span>Threshold</span>
@@ -906,15 +1009,17 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
         </div>
 
         <div className={`energy-alert-strip ${warningActive ? "warning" : "ok"}`}>
-          <strong>{warningActive ? "High usage warning" : "System operating normally"}</strong>
+          <strong>{simulatorError ? "Live simulator reconnecting" : warningActive ? "High usage warning" : "System operating normally"}</strong>
           <span>
-            {viewMetrics.unusualSpike
-              ? "Unusual power spike detected."
-              : viewMetrics.lowVoltage
-                ? `Voltage dipped to ${viewMetrics.voltage}V.`
-                : livePowerWatts > liveWarningThreshold
-                  ? `Live power crossed ${formatInteger(liveWarningThreshold)}W.`
-                  : "Power draw remains inside the recommended operating envelope."}
+            {simulatorError
+              ? simulatorError
+              : simulatorSummary?.unusualSpike
+                ? "Unusual power spike detected by the simulator stream."
+                : simulatorSummary?.lowVoltage || viewMetrics.lowVoltage
+                  ? `Voltage dipped to ${liveVoltage}V.`
+                  : livePowerWatts > liveWarningThreshold
+                    ? `Live power crossed ${formatInteger(liveWarningThreshold)}W.`
+                    : "Power draw remains inside the recommended operating envelope."}
           </span>
         </div>
 
@@ -924,23 +1029,31 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
             <span>{activeDeviceFeed.length} visible</span>
           </div>
           <div className="energy-device-stream">
-            {activeDeviceFeed.map((device) => (
-              <article key={device.deviceId} className={`energy-device-row ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""}`}>
-                <div className="energy-device-leading">
-                  <span className="icon-pill compact">
-                    <ApplianceIcon type={device.type} />
-                  </span>
-                  <div>
-                    <strong>{device.name}</strong>
-                    <span>{roomLookup[device.roomId]?.name || device.room || "Unassigned room"}</span>
+            {activeDeviceFeed.map((device) => {
+              const liveSnapshot = simulatorMap[device.deviceId];
+              const livePower = liveSnapshot ? Math.round(liveSnapshot.power) : device.on ? device.watts : 0;
+              const deviceVoltage = liveSnapshot ? Math.round(liveSnapshot.voltage) : liveVoltage;
+              const deviceCurrent = liveSnapshot ? Number(liveSnapshot.current || 0) : 0;
+
+              return (
+                <article key={device.deviceId} className={`energy-device-row ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""} ${liveSnapshot?.warning ? "warning" : ""}`}>
+                  <div className="energy-device-leading">
+                    <span className="icon-pill compact">
+                      <ApplianceIcon type={device.type} />
+                    </span>
+                    <div>
+                      <strong>{device.name}</strong>
+                      <span>{roomLookup[device.roomId]?.name || device.room || "Unassigned room"}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="energy-device-meta">
-                  <strong>{device.watts}W</strong>
-                  <span>{device.on ? "Live" : "Idle"}</span>
-                </div>
-              </article>
-            ))}
+                  <div className="energy-device-meta">
+                    <strong>{livePower}W</strong>
+                    <span>{device.on ? `${deviceVoltage}V | ${formatNumber(deviceCurrent, 1)}A` : "Idle"}</span>
+                    <small>{liveSnapshot?.warningText || (device.on ? "Live simulator" : "Standby")}</small>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </div>
 
@@ -981,11 +1094,11 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
             <article className="panel hero-panel cinematic-hero-panel">
               <div className="hero-copy">
                 <span className="section-tag">{placeConfig.label} AI simulation</span>
-                <h2>{formatNumber(viewMetrics.liveLoadKw, 2)} kW live load</h2>
+                <h2>{formatNumber(liveLoadKw, 2)} kW live load</h2>
                 <p>{placeConfig.simulationMode}. Voltage, current, floor demand, and device activity refresh continuously without crowding the screen.</p>
               </div>
               <div className="hero-badge cinematic-hero-badge">
-                <strong>{viewMetrics.activeDevices}</strong>
+                <strong>{simulatorSummary?.activeDevices ?? viewMetrics.activeDevices}</strong>
                 <span>devices active</span>
                 <small>{viewMetrics.peakHour ? "Peak-hour modulation" : "Normal demand window"}</small>
               </div>
@@ -1006,10 +1119,10 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
           </div>
 
           <section className="summary-metric-grid">
-            <MetricCard label="Total power" value={`${formatInteger(livePowerWatts)} W`} note={`${viewMetrics.activeDevices} active devices`} tone={warningActive ? "danger" : "success"} />
+            <MetricCard label="Total power" value={`${formatInteger(livePowerWatts)} W`} note={`${simulatorSummary?.activeDevices ?? viewMetrics.activeDevices} active devices`} tone={warningActive ? "danger" : "success"} />
             <MetricCard label="Today's usage" value={`${formatNumber(viewMetrics.todayUsage, 1)} kWh`} note={`${formatNumber(remainingUsage, 1)} kWh remaining`} />
-            <MetricCard label="Voltage" value={`${viewMetrics.voltage}V`} note={viewMetrics.lowVoltage ? "Below healthy range" : "Stable supply"} tone={viewMetrics.lowVoltage ? "danger" : "default"} />
-            <MetricCard label="Current" value={`${formatNumber(viewMetrics.current, 1)} A`} note={`${formatCurrency(viewMetrics.billEstimate)} projected bill`} />
+            <MetricCard label="Voltage" value={`${liveVoltage}V`} note={simulatorSummary?.lowVoltage || viewMetrics.lowVoltage ? "Below healthy range" : "Stable supply"} tone={simulatorSummary?.lowVoltage || viewMetrics.lowVoltage ? "danger" : "default"} />
+            <MetricCard label="Current" value={`${formatNumber(liveCurrent, 1)} A`} note={`${formatCurrency(viewMetrics.billEstimate)} projected bill`} />
           </section>
         </section>
 
@@ -1402,6 +1515,15 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
 
 
 

@@ -109,4 +109,26 @@ export const api = {
       token
     );
   },
+  getSimulatorDevice(token, deviceType, query = {}) {
+    const params = new URLSearchParams(
+      Object.entries(query).reduce((accumulator, [key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+          accumulator[key] = String(value);
+        }
+        return accumulator;
+      }, {})
+    );
+
+    return request(`/api/simulator/${deviceType}${params.toString() ? `?${params.toString()}` : ""}`, { method: "GET" }, token);
+  },
+  getSimulatorBatch(token, payload) {
+    return request(
+      "/api/simulator/batch",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      token
+    );
+  },
 };
