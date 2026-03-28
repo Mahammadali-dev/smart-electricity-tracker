@@ -13,12 +13,10 @@ import {
   calculateRoomStats,
   computeMetrics,
   createInitialFloors,
-  createDevice,
   createInitialHistory,
   deviceStyle,
   filterDevicesByFloor,
   filterRoomsByFloor,
-  getAllowedDeviceLibrary,
   getFloorById,
   getPreferredFloorId,
   getRoomById,
@@ -31,7 +29,7 @@ import {
   serializeRooms,
   syncTodayHistory,
 } from "../utils/energy";
-import { getAiSuggestions, getPlaceConfig, normalizePlaceType } from "../utils/placeProfiles";
+import { getPlaceConfig, normalizePlaceType } from '../utils/placeProfiles';
 
 const notificationDefaults = {
   usageLimit: true,
@@ -184,7 +182,6 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   const shellRef = useRef(null);
   const placeType = normalizePlaceType(session?.user?.placeType || session?.settings?.placeType);
   const placeConfig = getPlaceConfig(placeType);
-  const aiSuggestions = getAiSuggestions(placeType);
   const initialLimit = session?.settings?.dailyLimit || placeConfig.dailyLimit;
   const initialTheme = session?.settings?.darkMode === false ? "light" : "dark";
   const initialGridSize = session?.settings?.gridSize || placeConfig.gridSize;
@@ -217,7 +214,8 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   const [isSaving, setIsSaving] = useState(false);
   const [profileName, setProfileName] = useState(() => session?.user?.name || "");
   const [profileSaving, setProfileSaving] = useState(false);
-  const [profileFeedback, setProfileFeedback] = useState({ tone: "", message: "" });
+  const [profileFeedback, setProfileFeedback] = useState({ tone: '', message: '' });
+  const [openSettingsSection, setOpenSettingsSection] = useState('profile');
   const [simulatorMap, setSimulatorMap] = useState({});
   const [simulatorSummary, setSimulatorSummary] = useState(null);
   const [simulatorError, setSimulatorError] = useState("");
@@ -702,49 +700,6 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     markDirty("Floor changes pending save");
   }, [appliances, canAddFloor, floors, markDirty, placeType, rooms]);
 
-  const applySuggestion = useCallback((suggestion) => {
-    const orderedRooms = [
-      ...activeRooms,
-      ...rooms.filter((room) => !activeRooms.some((activeRoom) => activeRoom.id === room.id)),
-    ];
-    const room = orderedRooms.find((candidate) =>
-      (suggestion.roomKeywords || []).some((keyword) =>
-        String(candidate.type || "").toLowerCase().includes(keyword) ||
-        String(candidate.name || "").toLowerCase().includes(keyword)
-      )
-    ) || orderedRooms[0];
-
-    if (!room) {
-      return;
-    }
-
-    const template = getAllowedDeviceLibrary(room, placeType).find((device) => device.type === suggestion.deviceType);
-    if (!template) {
-      return;
-    }
-
-    const roomDeviceCount = appliances.filter((device) => device.roomId === room.id).length;
-    const sameTypeCount = appliances.filter((device) => device.roomId === room.id && device.type === template.type).length;
-    const nextDevice = createDevice(
-      {
-        floorId: room.floorId,
-        roomId: room.id,
-        room: room.name,
-        name: sameTypeCount ? `${template.name} ${sameTypeCount + 1}` : template.name,
-        type: template.type,
-        watts: template.watts,
-        dailyHours: template.dailyHours,
-        on: template.type !== "generator",
-      },
-      roomDeviceCount
-    );
-
-    setAppliances((current) => [...current, nextDevice]);
-    setActiveFloorId(room.floorId);
-    setSelectedRoomId(room.id);
-    setActiveTab("devices");
-    markDirty("Device changes pending save");
-  }, [activeRooms, appliances, markDirty, placeType, rooms]);
 
   const handleProfileSave = useCallback(async (event) => {
     event.preventDefault();
@@ -1149,7 +1104,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
           <div className="hero-grid cinematic-hero-grid">
             <article className="panel hero-panel cinematic-hero-panel">
               <div className="hero-copy">
-                <span className="section-tag">{placeConfig.label} AI simulation</span>
+                <span className="section-tag">{placeConfig.label} live simulation</span>
                 <h2>{formatNumber(liveLoadKw, 2)} kW live load</h2>
                 <p>{placeConfig.simulationMode}. Voltage, current, floor demand, and device activity refresh continuously without crowding the screen.</p>
               </div>
@@ -1298,22 +1253,6 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
           {renderRoomMapPanel()}
         </section>
 
-        <section className="dashboard-section">
-          <SectionHeader
-            eyebrow="AI Suggestions"
-            title="Recommended additions"
-            copy="Suggestions are grouped here instead of crowding the main dashboard so the home view stays focused."
-          />
-          <div className="suggestion-list suggestion-list-grid">
-            {aiSuggestions.map((suggestion) => (
-              <article key={suggestion.id} className="suggestion-card">
-                <strong>{suggestion.title}</strong>
-                <p>{suggestion.detail}</p>
-                <button type="button" className="ghost-button" onClick={() => applySuggestion(suggestion)}>Apply</button>
-              </article>
-            ))}
-          </div>
-        </section>
       </div>
     );
   }
@@ -1403,132 +1342,245 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
   }
 
   function renderSettingsTab() {
-    return (
-      <div className="tab-stack">
-        <section className="content-grid two-up settings-grid-personal">
-          <article className="panel settings-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Profile</span>
-                <h3>Personal details</h3>
-                <p>Keep your smart workspace personal with a saved username that appears across the dashboard.</p>
-              </div>
+    const settingsSections = [
+      {
+        id: 'profile',
+        label: 'Profile',
+        copy: 'Edit the username and account details shown across the dashboard.',
+      },
+      {
+        id: 'theme',
+        label: 'Theme',
+        copy: 'Switch between dark mode and light mode from one clean place.',
+      },
+      {
+        id: 'workspace',
+        label: 'Workspace',
+        copy: 'Manage usage limits, save the layout, and jump into the editor.',
+      },
+      {
+        id: 'floors',
+        label: 'Floor selector',
+        copy: 'Pick the active floor and manage levels without leaving settings.',
+      },
+      {
+        id: 'notifications',
+        label: 'Notifications',
+        copy: 'Choose which alert popups stay enabled while you monitor power.',
+      },
+    ];
+
+    let detailLabel = 'Profile';
+    let detailTitle = 'Profile settings';
+    let detailCopy = 'Update the personal details that appear across your smart electricity dashboard.';
+    let detailContent = null;
+
+    if (openSettingsSection === 'profile') {
+      detailLabel = 'Profile';
+      detailTitle = 'Personal details';
+      detailCopy = 'Keep your dashboard personal with a saved username and quick account readout.';
+      detailContent = (
+        <form className='profile-form' onSubmit={handleProfileSave}>
+          <label className='settings-control'>
+            <span>Username</span>
+            <input
+              type='text'
+              value={profileName}
+              onChange={(event) => {
+                setProfileName(event.target.value);
+                if (profileFeedback.message) {
+                  setProfileFeedback({ tone: '', message: '' });
+                }
+              }}
+              placeholder='Enter your username'
+              minLength='2'
+              maxLength='40'
+              required
+            />
+          </label>
+
+          <div className='profile-readout'>
+            <article className='profile-readout-card'>
+              <span>Email</span>
+              <strong>{session.user.email}</strong>
+            </article>
+            <article className='profile-readout-card'>
+              <span>Place type</span>
+              <strong>{placeConfig.label}</strong>
+            </article>
+          </div>
+
+          {profileFeedback.message ? <div className={`form-alert ${profileFeedback.tone} inline`}>{profileFeedback.message}</div> : null}
+
+          <button type='submit' className='primary-button wide-button' disabled={profileSaving}>
+            {profileSaving ? 'Saving profile...' : 'Save profile'}
+          </button>
+        </form>
+      );
+    } else if (openSettingsSection === 'theme') {
+      detailLabel = 'Theme';
+      detailTitle = 'Dark and light mode';
+      detailCopy = 'Theme control lives here only, with cleaner touch targets and a smoother full-app transition.';
+      detailContent = (
+        <div className='theme-choice-grid'>
+          <button type='button' className={`theme-choice-card ${theme === 'dark' ? 'active' : ''}`} onClick={() => handleThemeSelect('dark')}>
+            <span className='theme-choice-badge'>Default</span>
+            <strong>Dark mode</strong>
+            <span>Matte dark surfaces with a calm emerald accent for focused monitoring.</span>
+          </button>
+          <button type='button' className={`theme-choice-card ${theme === 'light' ? 'active' : ''}`} onClick={() => handleThemeSelect('light')}>
+            <span className='theme-choice-badge'>Bright</span>
+            <strong>Light mode</strong>
+            <span>Clean white panels with the same emerald accent for a softer daytime view.</span>
+          </button>
+        </div>
+      );
+    } else if (openSettingsSection === 'workspace') {
+      detailLabel = 'Workspace';
+      detailTitle = 'Consumption and layout controls';
+      detailCopy = 'Adjust your daily budget, open the map editor, and save layout changes when you are ready.';
+      detailContent = (
+        <div className='settings-stack'>
+          <label className='settings-control'>
+            <span>Daily usage limit</span>
+            <input type='range' min='10' max={placeType === 'industry' ? 800 : placeType === 'school' ? 250 : placeType === 'office' ? 180 : 60} value={dailyLimit} onChange={handleDailyLimitChange} />
+            <strong>{dailyLimit} kWh</strong>
+          </label>
+
+          <div className='profile-readout'>
+            <article className='profile-readout-card'>
+              <span>Layout status</span>
+              <strong>{saveStatus}</strong>
+            </article>
+            <article className='profile-readout-card'>
+              <span>Saved layout</span>
+              <strong>{floors.length} floors | {rooms.length} rooms</strong>
+            </article>
+          </div>
+
+          <button type='button' className='toggle-setting' onClick={() => navigate('/setup')}>
+            <div>
+              <strong>Edit house map</strong>
+              <span>{appliances.length} devices are saved in your {placeConfig.label.toLowerCase()} layout.</span>
             </div>
+            <span className='theme-switch active'>Open</span>
+          </button>
 
-            <form className="profile-form" onSubmit={handleProfileSave}>
-              <label className="settings-control">
-                <span>Username</span>
-                <input
-                  type="text"
-                  value={profileName}
-                  onChange={(event) => {
-                    setProfileName(event.target.value);
-                    if (profileFeedback.message) {
-                      setProfileFeedback({ tone: "", message: "" });
-                    }
-                  }}
-                  placeholder="Enter your username"
-                  minLength="2"
-                  maxLength="40"
-                  required
-                />
-              </label>
-
-              <div className="profile-readout">
-                <article className="profile-readout-card">
-                  <span>Email</span>
-                  <strong>{session.user.email}</strong>
-                </article>
-                <article className="profile-readout-card">
-                  <span>Place type</span>
-                  <strong>{placeConfig.label}</strong>
-                </article>
-              </div>
-
-              {profileFeedback.message ? <div className={`form-alert ${profileFeedback.tone} inline`}>{profileFeedback.message}</div> : null}
-
-              <button type="submit" className="primary-button wide-button" disabled={profileSaving}>
-                {profileSaving ? "Saving profile..." : "Save profile"}
-              </button>
-            </form>
-          </article>
-
-          <article className="panel theme-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Theme</span>
-                <h3>Dark and light mode</h3>
-                <p>Theme control lives only here, with a smoother full-app transition and mobile-friendly touch targets.</p>
-              </div>
-            </div>
-
-            <div className="theme-choice-grid">
-              <button type="button" className={`theme-choice-card ${theme === "dark" ? "active" : ""}`} onClick={() => handleThemeSelect("dark")}>
-                <span className="theme-choice-badge">Default</span>
-                <strong>Dark mode</strong>
-                <span>Matte black surfaces with cinematic amber highlights for focused monitoring.</span>
-              </button>
-              <button type="button" className={`theme-choice-card ${theme === "light" ? "active" : ""}`} onClick={() => handleThemeSelect("light")}>
-                <span className="theme-choice-badge">Bright</span>
-                <strong>Light mode</strong>
-                <span>Clean white panels with the same emerald accent for a crisp daytime view.</span>
-              </button>
-            </div>
-          </article>
-        </section>
-
-        <section className="content-grid two-up settings-grid-secondary">
-          <article className="panel workspace-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Workspace</span>
-                <h3>Consumption limits</h3>
-                <p>Adjust your daily electricity budget and jump back into the house map editor whenever you need to refine the layout.</p>
-              </div>
-            </div>
-
-            <div className="settings-stack">
-              <label className="settings-control">
-                <span>Daily usage limit</span>
-                <input type="range" min="10" max={placeType === "industry" ? 800 : placeType === "school" ? 250 : placeType === "office" ? 180 : 60} value={dailyLimit} onChange={handleDailyLimitChange} />
-                <strong>{dailyLimit} kWh</strong>
-              </label>
-
-              <button type="button" className="toggle-setting" onClick={() => navigate("/setup")}>
-                <div>
-                  <strong>Edit house map</strong>
-                  <span>{floors.length} floors, {rooms.length} rooms, and {appliances.length} devices saved in your {placeConfig.label.toLowerCase()} layout.</span>
-                </div>
-                <span className="theme-switch active">Open</span>
-              </button>
-
-              <button type="button" className="primary-button wide-button" onClick={handleManualSave} disabled={isSaving || (!isDirty && saveStatus === "Saved")}>
-                {isSaving ? "Saving layout..." : isDirty ? "Save layout changes" : "All changes saved"}
-              </button>
-            </div>
-          </article>
-
-          <article className="panel notification-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Notifications</span>
-                <h3>Alert preferences</h3>
-                <p>Choose which warnings should stay prominent while you monitor the live energy flow.</p>
-              </div>
-            </div>
-
-            <div className="settings-list">
-              {Object.entries(notificationPrefs).map(([key, value]) => (
-                <button key={key} type="button" className="toggle-setting" onClick={() => togglePreference(key)}>
-                  <div>
-                    <strong>{key.replace(/([A-Z])/g, " $1")}</strong>
-                    <span>{value ? "Enabled" : "Disabled"}</span>
-                  </div>
-                  <span className={`theme-switch ${value ? "active" : ""}`}>{value ? "On" : "Off"}</span>
-                </button>
+          <button type='button' className='primary-button wide-button' onClick={handleManualSave} disabled={isSaving || (!isDirty && saveStatus === 'Saved')}>
+            {isSaving ? 'Saving layout...' : isDirty ? 'Save layout changes' : 'All changes saved'}
+          </button>
+        </div>
+      );
+    } else if (openSettingsSection === 'floors') {
+      detailLabel = 'Floor selector';
+      detailTitle = 'Switch and manage floors';
+      detailCopy = 'Choose the active floor here and add a new level whenever your place type allows it.';
+      detailContent = (
+        <div className='settings-stack'>
+          <label className='settings-control'>
+            <span>Active floor</span>
+            <select value={activeFloorId} onChange={(event) => handleFloorChange(event.target.value)}>
+              {floorStats.map((floor) => (
+                <option key={floor.id} value={floor.id}>{floor.name}</option>
               ))}
-            </div>
-          </article>
+            </select>
+          </label>
+
+          <div className='settings-floor-list'>
+            {floorStats.map((floor) => (
+              <button
+                key={floor.id}
+                type='button'
+                className={`settings-floor-card ${activeFloorId === floor.id ? 'active' : ''}`}
+                onClick={() => handleFloorChange(floor.id)}
+              >
+                <div>
+                  <strong>{floor.name}</strong>
+                  <span>{floor.roomCount} rooms | {floor.deviceCount} devices</span>
+                </div>
+                <small>{floor.activeWatts}W live</small>
+              </button>
+            ))}
+          </div>
+
+          <div className='settings-actions-row'>
+            {canAddFloor ? <button type='button' className='ghost-button wide-button' onClick={handleAddFloor}>+ Add floor</button> : null}
+            <button type='button' className='ghost-button wide-button' onClick={() => navigate('/setup')}>Open floor editor</button>
+          </div>
+        </div>
+      );
+    } else {
+      detailLabel = 'Notifications';
+      detailTitle = 'Alert popup preferences';
+      detailCopy = 'Turn warning popups on or off for the alerts that matter most to you.';
+      detailContent = (
+        <div className='settings-list'>
+          {Object.entries(notificationPrefs).map(([key, value]) => (
+            <button key={key} type='button' className='toggle-setting' onClick={() => togglePreference(key)}>
+              <div>
+                <strong>{key.replace(/([A-Z])/g, ' $1')}</strong>
+                <span>{value ? 'Enabled' : 'Disabled'}</span>
+              </div>
+              <span className={`theme-switch ${value ? 'active' : ''}`}>{value ? 'On' : 'Off'}</span>
+            </button>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div className='tab-stack'>
+        <section className='dashboard-section'>
+          <SectionHeader
+            eyebrow='Settings'
+            title='Open one setting at a time'
+            copy='Choose an option and its controls will open here, so Settings stays clean instead of showing everything at once.'
+          />
+
+          <div className='settings-shell'>
+            <aside className='panel settings-nav-panel'>
+              <div className='panel-head'>
+                <div>
+                  <span className='section-tag'>Options</span>
+                  <h3>Settings menu</h3>
+                  <p>Click any option below to open and manage that part of the app.</p>
+                </div>
+              </div>
+
+              <div className='settings-menu'>
+                {settingsSections.map((section) => (
+                  <button
+                    key={section.id}
+                    type='button'
+                    className={`settings-nav-item ${openSettingsSection === section.id ? 'active' : ''}`}
+                    onClick={() => setOpenSettingsSection(section.id)}
+                  >
+                    <div>
+                      <strong>{section.label}</strong>
+                      <span>{section.copy}</span>
+                    </div>
+                    <span className={`theme-switch ${openSettingsSection === section.id ? 'active' : ''}`}>
+                      {openSettingsSection === section.id ? 'Open' : 'View'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            <article className='panel settings-detail-panel'>
+              <div className='panel-head'>
+                <div>
+                  <span className='section-tag'>{detailLabel}</span>
+                  <h3>{detailTitle}</h3>
+                  <p>{detailCopy}</p>
+                </div>
+              </div>
+
+              <div className='settings-detail-copy'>
+                {detailContent}
+              </div>
+            </article>
+          </div>
         </section>
       </div>
     );
@@ -1542,7 +1594,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
       <main className="dashboard-main">
         <header className="topbar panel cinematic-topbar">
           <div>
-            <span className="section-tag">{placeConfig.label} AI workspace</span>
+            <span className="section-tag">{placeConfig.label} smart workspace</span>
             <h2>Welcome, {session.user.name || "Operator"}</h2>
             <p>Your personalized smart electricity dashboard is ready. Monitor live energy, tune your layout, and manage the full system from one cinematic control surface.</p>
           </div>

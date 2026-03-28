@@ -6,7 +6,7 @@ export const PLACE_TYPE_OPTIONS = [
     description: "Instantly builds a smart living space with balanced daily usage and comfort devices.",
     gridSize: 10,
     dailyLimit: 28,
-    simulationMode: "Residential AI balance",
+    simulationMode: "Residential smart balance",
   },
   {
     value: "school",
