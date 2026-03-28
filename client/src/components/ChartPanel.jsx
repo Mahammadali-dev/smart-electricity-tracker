@@ -122,12 +122,12 @@ const ChartPanel = memo(function ChartPanel({ title, subtitle, data, accent = "a
             <svg viewBox={`0 0 ${viewWidth} ${VIEW_HEIGHT}`} className="chart-svg" role="img" aria-label={title}>
               <defs>
                 <linearGradient id={`${chartIdBase}-area`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgba(255, 184, 0, 0.40)" />
-                  <stop offset="100%" stopColor="rgba(255, 184, 0, 0.02)" />
+                  <stop offset="0%" stopColor="rgba(0, 200, 83, 0.38)" />
+                  <stop offset="100%" stopColor="rgba(0, 200, 83, 0.02)" />
                 </linearGradient>
                 <linearGradient id={`${chartIdBase}-line`} x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor={accent === "smoke" ? "#FFD27A" : "#FFB800"} />
-                  <stop offset="100%" stopColor="#FFF4CC" />
+                  <stop offset="0%" stopColor={accent === "smoke" ? "#6EE7A8" : "#00C853"} />
+                  <stop offset="100%" stopColor="#E0E0E0" />
                 </linearGradient>
                 <filter id={`${chartIdBase}-glow`} x="-40%" y="-40%" width="180%" height="180%">
                   <feGaussianBlur stdDeviation="6" result="blur" />
@@ -216,3 +216,5 @@ const ChartPanel = memo(function ChartPanel({ title, subtitle, data, accent = "a
 });
 
 export default ChartPanel;
+
+

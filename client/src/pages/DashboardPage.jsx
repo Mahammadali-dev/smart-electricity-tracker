@@ -1302,7 +1302,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
               <button type="button" className={`theme-choice-card ${theme === "light" ? "active" : ""}`} onClick={() => handleThemeSelect("light")}>
                 <span className="theme-choice-badge">Bright</span>
                 <strong>Light mode</strong>
-                <span>Clean white panels with the same solar amber accent for a crisp daytime view.</span>
+                <span>Clean white panels with the same emerald accent for a crisp daytime view.</span>
               </button>
             </div>
           </article>
@@ -1402,6 +1402,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     </div>
   );
 }
+
 
 
 
