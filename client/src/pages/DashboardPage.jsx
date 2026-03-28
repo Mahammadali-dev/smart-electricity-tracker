@@ -110,6 +110,40 @@ function formatCurrency(value) {
   }).format(value || 0);
 }
 
+function getMaxFloorCount(placeType) {
+  switch (normalizePlaceType(placeType)) {
+    case "school":
+      return 4;
+    case "industry":
+      return 3;
+    case "office":
+      return 3;
+    case "home":
+    default:
+      return 3;
+  }
+}
+
+function buildFloorRecord(index, placeType) {
+  return {
+    id: `floor-${index}`,
+    name: normalizePlaceType(placeType) === "industry" ? `Section ${index}` : `Floor ${index}`,
+  };
+}
+
+function SectionHeader({ eyebrow, title, copy, action = null }) {
+  return (
+    <div className="dashboard-section-head">
+      <div>
+        <span className="section-tag">{eyebrow}</span>
+        <h3>{title}</h3>
+        <p>{copy}</p>
+      </div>
+      {action ? <div className="dashboard-section-action">{action}</div> : null}
+    </div>
+  );
+}
+
 function RoomModal({ room, onClose }) {
   if (!room) {
     return null;
@@ -205,6 +239,12 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   const maxFloorWatts = useMemo(() => Math.max(...floorStats.map((floor) => floor.activeWatts), 1), [floorStats]);
   const warningActive = viewMetrics.lowVoltage || viewMetrics.unusualSpike || livePowerWatts > liveWarningThreshold;
   const floorLoadRatio = Math.min(100, Math.round((livePowerWatts / liveWarningThreshold) * 100));
+  const maxFloorCount = useMemo(() => getMaxFloorCount(placeType), [placeType]);
+  const canAddFloor = floors.length < maxFloorCount;
+  const activeDeviceCards = useMemo(() => {
+    const source = selectedRoomData?.devices?.length ? selectedRoomData.devices : activeAppliances;
+    return source.slice().sort((left, right) => (Number(right.on) - Number(left.on)) || right.watts - left.watts);
+  }, [selectedRoomData, activeAppliances]);
   useEffect(() => {
     const host = shellRef.current;
     if (!host || typeof window === "undefined") {
@@ -442,6 +482,25 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     setRoomModal(null);
   }
 
+  function handleAddFloor() {
+    if (!canAddFloor) {
+      navigate("/setup");
+      return;
+    }
+
+    const highestFloor = floors.reduce((max, floor) => {
+      const value = Number(String(floor.id).replace(/[^0-9]/g, "")) || 0;
+      return Math.max(max, value);
+    }, 0);
+    const nextFloor = buildFloorRecord(highestFloor + 1, placeType);
+    const nextFloors = normalizeFloors([...floors, nextFloor], rooms, appliances, placeType);
+
+    setFloors(nextFloors);
+    setActiveFloorId(nextFloor.id);
+    setSelectedRoomId(null);
+    setRoomModal(null);
+    setActiveTab("home");
+  }
 
   function applySuggestion(suggestion) {
     const orderedRooms = [
@@ -487,20 +546,32 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   }
 
   function renderFloorSelectorPanel() {
+    const renderActionButton = () => (
+      canAddFloor ? (
+        <button type="button" className="ghost-button floor-action-button" onClick={handleAddFloor}>+ Add floor</button>
+      ) : (
+        <button type="button" className="ghost-button floor-action-button" onClick={() => navigate("/setup")}>Edit floors</button>
+      )
+    );
+
     return (
       <section className="panel floor-band-panel cinematic-floor-band">
-        <div className="panel-head">
-          <div>
+        <div className="floor-band-head">
+          <div className="floor-band-copy">
             <span className="section-tag">Floor selector</span>
             <h3>{activeFloor?.name || "Floor 1"}</h3>
-            <p>Switch between {placeConfig.label.toLowerCase()} floors to inspect room load, devices, and AI-managed consumption on each level.</p>
+            <p>Desktop uses quick tabs, while mobile keeps floor switching simple with a single selector and a direct add-floor action.</p>
           </div>
-          <div className="status-card status-card-glow">
-            <strong>{activeFloorData?.roomCount || 0}</strong>
-            <span>rooms</span>
+          <div className="floor-band-tools">
+            <div className="status-card status-card-glow floor-band-status">
+              <strong>{activeFloorData?.roomCount || 0}</strong>
+              <span>rooms on this floor</span>
+            </div>
+            {renderActionButton()}
           </div>
         </div>
-        <div className="floor-selector-row">
+
+        <div className="floor-tab-bar floor-tab-bar-desktop">
           {floorStats.map((floor) => (
             <button
               key={floor.id}
@@ -510,9 +581,34 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
             >
               <strong>{floor.name}</strong>
               <span>{floor.roomCount} rooms | {floor.deviceCount} devices</span>
-              <small>{floor.activeWatts}W live | {floor.estimatedDailyKwh.toFixed(1)} kWh/day</small>
+              <small>{floor.activeWatts}W live</small>
             </button>
           ))}
+          {canAddFloor ? (
+            <button type="button" className="floor-tab-chip floor-tab-chip-add" onClick={handleAddFloor}>
+              <strong>+ Add</strong>
+              <span>Create another level</span>
+              <small>Blank floor ready for rooms</small>
+            </button>
+          ) : null}
+        </div>
+
+        <div className="floor-mobile-selector">
+          <label className="floor-select-field">
+            <span>Active floor</span>
+            <select value={activeFloorId} onChange={(event) => handleFloorChange(event.target.value)}>
+              {floorStats.map((floor) => (
+                <option key={floor.id} value={floor.id}>{floor.name}</option>
+              ))}
+            </select>
+          </label>
+          {renderActionButton()}
+        </div>
+
+        <div className="floor-usage-grid dashboard-floor-strip">
+          <MetricCard label="Live draw" value={`${formatInteger(activeFloorData?.activeWatts || 0)} W`} note={`${activeFloorData?.activeCount || 0} devices on`} tone={activeFloorData?.overloadedCount ? "danger" : "success"} />
+          <MetricCard label="Estimated today" value={`${formatNumber(activeFloorData?.estimatedDailyKwh || 0, 1)} kWh`} note={`${activeFloorData?.roomCount || 0} mapped rooms`} />
+          <MetricCard label="Peak signal" value={viewMetrics.peakHour ? "Active" : "Idle"} note={`${formatInteger(liveWarningThreshold)}W warning level`} tone={warningActive ? "danger" : "default"} />
         </div>
       </section>
     );
@@ -581,6 +677,51 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
         </div>
       </article>
     ));
+  }
+
+  function renderDeviceCollectionPanel({ title, subtitle, items, emptyTitle, emptyCopy }) {
+    return (
+      <article className="panel device-collection-panel cinematic-device-panel">
+        <div className="panel-head">
+          <div>
+            <span className="section-tag">Devices</span>
+            <h3>{title}</h3>
+            <p>{subtitle}</p>
+          </div>
+        </div>
+
+        <div className="device-card-grid">
+          {items.length ? (
+            items.map((device) => (
+              <button
+                key={device.deviceId}
+                type="button"
+                className={`device-quick-card ${device.on ? "on" : "off"} ${device.highUsage ? "high" : ""}`}
+                onClick={() => toggleAppliance(device.deviceId)}
+              >
+                <div className="device-quick-head">
+                  <span className="icon-pill compact">
+                    <ApplianceIcon type={device.type} />
+                  </span>
+                  <span className={`toggle-pill ${device.on ? "on" : "off"}`}>{device.on ? "ON" : "OFF"}</span>
+                </div>
+                <strong>{device.name}</strong>
+                <span className="device-quick-room">{roomLookup[device.roomId]?.name || device.room || activeFloor?.name || "Unassigned room"}</span>
+                <div className="device-quick-meta">
+                  <span>{device.watts}W</span>
+                  <small>{device.on ? "Tap to power down" : "Tap to power on"}</small>
+                </div>
+              </button>
+            ))
+          ) : (
+            <article className="device-empty-card">
+              <strong>{emptyTitle}</strong>
+              <span>{emptyCopy}</span>
+            </article>
+          )}
+        </div>
+      </article>
+    );
   }
 
   function renderRoomMapPanel() {
@@ -729,62 +870,67 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   function renderHomeTab() {
     return (
       <div className="tab-stack cinematic-home">
-        <section className="hero-grid cinematic-hero-grid">
-          <article className="panel hero-panel cinematic-hero-panel">
-            <div className="hero-copy">
-              <span className="section-tag">{placeConfig.label} AI simulation</span>
-              <h2>{formatNumber(viewMetrics.liveLoadKw, 2)} kW live load</h2>
-              <p>{placeConfig.simulationMode}. Voltage, current, floor demand, and device activity are refreshed continuously from the intelligent simulation engine.</p>
-            </div>
-            <div className="hero-badge cinematic-hero-badge">
-              <strong>{viewMetrics.activeDevices}</strong>
-              <span>devices active</span>
-              <small>{viewMetrics.peakHour ? "Peak-hour modulation" : "Normal demand window"}</small>
-            </div>
-          </article>
-
-          <article className="panel limit-panel cinematic-limit-panel">
-            <span className="section-tag">Smart daily usage</span>
-            <h3>{formatNumber(remainingUsage, 1)} kWh left</h3>
-            <p>
-              {viewMetrics.overLimit
-                ? `${formatNumber(viewMetrics.todayUsage - dailyLimit, 1)} kWh above the set limit.`
-                : `${formatNumber((viewMetrics.todayUsage / dailyLimit) * 100, 0)}% of the limit already used.`}
-            </p>
-            <div className="limit-bar cinematic-limit-bar">
-              <span style={{ width: `${Math.min(100, (viewMetrics.todayUsage / dailyLimit) * 100)}%` }} />
-            </div>
-          </article>
-        </section>
-
-        <section className="command-layout">
-          <div className="command-primary">{renderRoomMapPanel()}</div>
-          <div className="command-side">{renderLiveEnergyPanel()}</div>
-        </section>
-
-        <section className="floor-usage-grid cinematic-floor-metrics">
-          {floorStats.map((floor) => (
-            <MetricCard
-              key={floor.id}
-              label={floor.name}
-              value={`${formatNumber(floor.estimatedDailyKwh, 1)} kWh`}
-              note={`${floor.roomCount} rooms | ${floor.activeWatts}W active`}
-              tone={floor.id === activeFloorId ? "success" : floor.overloadedCount ? "danger" : "default"}
-            />
-          ))}
-        </section>
-
-        <section className="content-grid two-up cinematic-lower-grid">
-          <ChartPanel title="Real-time demand wave" subtitle={`Live load behavior across ${activeFloor?.name || "the selected floor"}.`} data={dailyTrend} accent="amber" />
-          <article className="panel alerts-panel cinematic-alerts-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Alerts</span>
-                <h3>System notifications</h3>
-                <p>Overuse, low voltage, peak hour, and overload signals across the full multi-floor system.</p>
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Energy Summary"
+            title={`${activeFloor?.name || "Current floor"} live overview`}
+            copy="The dashboard is split into clearer sections so energy, devices, alerts, and graphs each have their own space on mobile and desktop."
+          />
+          <div className="hero-grid cinematic-hero-grid">
+            <article className="panel hero-panel cinematic-hero-panel">
+              <div className="hero-copy">
+                <span className="section-tag">{placeConfig.label} AI simulation</span>
+                <h2>{formatNumber(viewMetrics.liveLoadKw, 2)} kW live load</h2>
+                <p>{placeConfig.simulationMode}. Voltage, current, floor demand, and device activity refresh continuously without crowding the screen.</p>
               </div>
-            </div>
+              <div className="hero-badge cinematic-hero-badge">
+                <strong>{viewMetrics.activeDevices}</strong>
+                <span>devices active</span>
+                <small>{viewMetrics.peakHour ? "Peak-hour modulation" : "Normal demand window"}</small>
+              </div>
+            </article>
 
+            <article className="panel limit-panel cinematic-limit-panel">
+              <span className="section-tag">Smart daily usage</span>
+              <h3>{formatNumber(remainingUsage, 1)} kWh left</h3>
+              <p>
+                {viewMetrics.overLimit
+                  ? `${formatNumber(viewMetrics.todayUsage - dailyLimit, 1)} kWh above the set limit.`
+                  : `${formatNumber((viewMetrics.todayUsage / dailyLimit) * 100, 0)}% of the limit already used.`}
+              </p>
+              <div className="limit-bar cinematic-limit-bar">
+                <span style={{ width: `${Math.min(100, (viewMetrics.todayUsage / dailyLimit) * 100)}%` }} />
+              </div>
+            </article>
+          </div>
+
+          <section className="summary-metric-grid">
+            <MetricCard label="Total power" value={`${formatInteger(livePowerWatts)} W`} note={`${viewMetrics.activeDevices} active devices`} tone={warningActive ? "danger" : "success"} />
+            <MetricCard label="Today's usage" value={`${formatNumber(viewMetrics.todayUsage, 1)} kWh`} note={`${formatNumber(remainingUsage, 1)} kWh remaining`} />
+            <MetricCard label="Voltage" value={`${viewMetrics.voltage}V`} note={viewMetrics.lowVoltage ? "Below healthy range" : "Stable supply"} tone={viewMetrics.lowVoltage ? "danger" : "default"} />
+            <MetricCard label="Current" value={`${formatNumber(viewMetrics.current, 1)} A`} note={`${formatCurrency(viewMetrics.billEstimate)} projected bill`} />
+          </section>
+        </section>
+
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Devices"
+            title={`${activeFloor?.name || "Current floor"} smart controls`}
+            copy="The floor map and device activity panel stay side by side on larger screens and stack cleanly on mobile."
+          />
+          <section className="command-layout">
+            <div className="command-primary">{renderRoomMapPanel()}</div>
+            <div className="command-side">{renderLiveEnergyPanel()}</div>
+          </section>
+        </section>
+
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Alerts"
+            title="Safety and demand warnings"
+            copy="Important events stay isolated from the charts so overloads and spikes are easier to scan at a glance."
+          />
+          <article className="panel alerts-panel cinematic-alerts-panel">
             <div className="alerts-list">
               {alerts.length ? (
                 alerts.map((alert) => (
@@ -803,51 +949,27 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
           </article>
         </section>
 
-        <section className="content-grid two-up cinematic-lower-grid">
-          <article className="panel ai-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">AI suggestions</span>
-                <h3>Recommended next devices</h3>
-                <p>Quick additions tailored to the {placeConfig.label.toLowerCase()} profile and current floor plan.</p>
-              </div>
-            </div>
-
-            <div className="suggestion-list">
-              {aiSuggestions.map((suggestion) => (
-                <article key={suggestion.id} className="suggestion-card">
-                  <strong>{suggestion.title}</strong>
-                  <p>{suggestion.detail}</p>
-                  <button type="button" className="ghost-button" onClick={() => applySuggestion(suggestion)}>Apply</button>
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel ai-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Simulation mode</span>
-                <h3>{simulationMode}</h3>
-                <p>The intelligent engine adjusts live demand, peak-hour emphasis, and unusual-spike behavior for this place type automatically.</p>
-              </div>
-            </div>
-
-            <div className="tips-list">
-              <article>
-                <strong>Place profile</strong>
-                <p>{placeConfig.description}</p>
-              </article>
-              <article>
-                <strong>Automatic grid size</strong>
-                <p>{gridSize}px blueprint spacing keeps this {placeConfig.label.toLowerCase()} floor plan realistic and easy to scan.</p>
-              </article>
-              <article>
-                <strong>Persistent layout</strong>
-                <p>Every room, floor, and device change is synced to MongoDB so the same map loads after refresh.</p>
-              </article>
-            </div>
-          </article>
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Graphs"
+            title="Mobile-readable demand trends"
+            copy="Swipe across the glowing lines to inspect daily and weekly peaks without the chart becoming cramped on smaller screens."
+          />
+          <section className="content-grid two-up cinematic-lower-grid">
+            <ChartPanel title="Real-time demand wave" subtitle={`Live load behavior across ${activeFloor?.name || "the selected floor"}.`} data={dailyTrend} accent="amber" hint="Swipe across the line to inspect live load spikes." />
+            <ChartPanel title="Weekly usage pattern" subtitle="The last 7 days of modeled consumption with smoother mobile spacing." data={weeklyTrend} accent="smoke" hint="Drag across the chart to compare each day." />
+          </section>
+          <section className="floor-usage-grid cinematic-floor-metrics">
+            {floorStats.map((floor) => (
+              <MetricCard
+                key={floor.id}
+                label={floor.name}
+                value={`${formatNumber(floor.estimatedDailyKwh, 1)} kWh`}
+                note={`${floor.roomCount} rooms | ${floor.activeWatts}W active`}
+                tone={floor.id === activeFloorId ? "success" : floor.overloadedCount ? "danger" : "default"}
+              />
+            ))}
+          </section>
         </section>
       </div>
     );
@@ -856,74 +978,72 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   function renderDevicesTab() {
     return (
       <div className="tab-stack">
-        <section className="content-grid two-up">
-          <article className="panel selected-room-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Selected room</span>
-                <h3>{selectedRoomData?.name || "No room selected"}</h3>
-                <p>Room-wise power status for {activeFloor?.name || "the active floor"} with total watt draw and active appliance count.</p>
-              </div>
-            </div>
-
-            <div className="room-summary-grid">
-              <MetricCard label="Live room load" value={`${formatNumber(selectedRoomData?.activeLoadKw || 0, 2)} kW`} note={`${selectedRoomData?.activeWatts || 0}W in use`} />
-              <MetricCard label="Devices on" value={selectedRoomData?.activeCount || 0} note="Running right now" />
-              <MetricCard
-                label="Status"
-                value={selectedRoomData?.overloaded ? "Warning" : "Healthy"}
-                note={selectedRoomData?.overloaded ? "Above room threshold" : "Within safe range"}
-                tone={selectedRoomData?.overloaded ? "danger" : "default"}
-              />
-            </div>
-
-            <div className="device-detail-list">
-              {(selectedRoomData?.devices || []).map((device) => (
-                <div key={device.deviceId} className={`device-detail-item ${device.on ? "on" : "off"}`}>
-                  <div className="device-leading">
-                    <span className="icon-pill compact">
-                      <ApplianceIcon type={device.type} />
-                    </span>
-                    <div>
-                      <strong>{device.name}</strong>
-                      <span>{device.watts}W appliance rating</span>
-                    </div>
-                  </div>
-                  <button type="button" className={`toggle-inline ${device.on ? "on" : "off"}`} onClick={() => toggleAppliance(device.deviceId)}>
-                    {device.on ? "Turn OFF" : "Turn ON"}
-                  </button>
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Devices"
+            title={`${activeFloor?.name || "Current floor"} device deck`}
+            copy="Large device cards keep room controls tidy on mobile while preserving one-tap power switching."
+          />
+          <section className="content-grid two-up device-control-grid">
+            <article className="panel selected-room-panel">
+              <div className="panel-head">
+                <div>
+                  <span className="section-tag">Selected room</span>
+                  <h3>{selectedRoomData?.name || "No room selected"}</h3>
+                  <p>Room-wise power status for {activeFloor?.name || "the active floor"} with total watt draw and active appliance count.</p>
                 </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel control-tips-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Remote control</span>
-                <h3>Floor-aware device automation</h3>
-                <p>State changes are saved with floor metadata so each level of the building keeps its own device map.</p>
               </div>
-            </div>
 
-            <div className="tips-list">
-              <article>
-                <strong>Floor-specific toggles</strong>
-                <p>Only the devices on the selected floor are shown in the room map, which keeps multi-floor control realistic and uncluttered.</p>
-              </article>
-              <article>
-                <strong>Orange warning</strong>
-                <p>Represents room or device states that need attention due to high load.</p>
-              </article>
-              <article>
-                <strong>High usage highlight</strong>
-                <p>Large loads like AC units and water heaters stay visually emphasized so power-heavy devices are easy to spot.</p>
-              </article>
-            </div>
-          </article>
+              <div className="room-summary-grid">
+                <MetricCard label="Live room load" value={`${formatNumber(selectedRoomData?.activeLoadKw || 0, 2)} kW`} note={`${selectedRoomData?.activeWatts || 0}W in use`} />
+                <MetricCard label="Devices on" value={selectedRoomData?.activeCount || 0} note="Running right now" />
+                <MetricCard label="Visible floor devices" value={activeAppliances.length} note={`${activeFloorData?.roomCount || 0} rooms on this floor`} />
+                <MetricCard
+                  label="Status"
+                  value={selectedRoomData?.overloaded ? "Warning" : "Healthy"}
+                  note={selectedRoomData?.overloaded ? "Above room threshold" : "Within safe range"}
+                  tone={selectedRoomData?.overloaded ? "danger" : "default"}
+                />
+              </div>
+            </article>
+
+            {renderDeviceCollectionPanel({
+              title: selectedRoomData?.name ? `${selectedRoomData.name} devices` : `${activeFloor?.name || "Floor"} devices`,
+              subtitle: selectedRoomData?.name
+                ? "Tap any card to toggle the device without leaving the floor view."
+                : "Pick a room on the map or control devices directly from these quick cards.",
+              items: activeDeviceCards,
+              emptyTitle: "No devices on this floor yet",
+              emptyCopy: "Open the setup wizard to place appliances and then return here for clean quick-control cards.",
+            })}
+          </section>
         </section>
 
-        {renderRoomMapPanel()}
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Floor Map"
+            title={`${activeFloor?.name || "Current floor"} room layout`}
+            copy="Keep the full top-view map visible while still having a cleaner device deck above it."
+          />
+          {renderRoomMapPanel()}
+        </section>
+
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="AI Suggestions"
+            title="Recommended additions"
+            copy="Suggestions are grouped here instead of crowding the main dashboard so the home view stays focused."
+          />
+          <div className="suggestion-list suggestion-list-grid">
+            {aiSuggestions.map((suggestion) => (
+              <article key={suggestion.id} className="suggestion-card">
+                <strong>{suggestion.title}</strong>
+                <p>{suggestion.detail}</p>
+                <button type="button" className="ghost-button" onClick={() => applySuggestion(suggestion)}>Apply</button>
+              </article>
+            ))}
+          </div>
+        </section>
       </div>
     );
   }
@@ -931,61 +1051,82 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
   function renderAnalyticsTab() {
     return (
       <div className="tab-stack">
-        <section className="content-grid analytics-grid">
-          <ChartPanel title="Daily graph" subtitle="Short-interval electricity demand." data={dailyTrend} accent="amber" />
-          <ChartPanel title="Weekly graph" subtitle="Last 7 days of tracked usage." data={weeklyTrend} accent="smoke" />
-          <ChartPanel title="Monthly graph" subtitle="Projected monthly consumption profile." data={monthlyTrend} accent="amber" />
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Graphs"
+            title="Responsive demand charts"
+            copy="Each chart uses a wider swipeable rail on mobile so labels and peaks remain readable instead of getting squeezed."
+          />
+          <section className="content-grid analytics-grid analytics-swipe-grid">
+            <ChartPanel title="Daily graph" subtitle="Short-interval electricity demand." data={dailyTrend} accent="amber" hint="Swipe to inspect short-interval load changes." />
+            <ChartPanel title="Weekly graph" subtitle="Last 7 days of tracked usage." data={weeklyTrend} accent="smoke" hint="Swipe to compare each day quickly." />
+            <ChartPanel title="Monthly graph" subtitle="Projected monthly consumption profile." data={monthlyTrend} accent="amber" hint="Slide across the curve to inspect the monthly profile." />
+          </section>
         </section>
 
-        <section className="content-grid two-up">
-          <article className="panel bill-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Bill estimate</span>
-                <h3>{formatCurrency(viewMetrics.billEstimate)}</h3>
-                <p>Projected bill based on the current monthly usage pattern.</p>
-              </div>
-            </div>
-
-            <div className="bill-insights">
-              <MetricCard label="Month usage" value={`${formatNumber(viewMetrics.monthlyUsage, 1)} kWh`} note="Simulated projection" />
-              <MetricCard label="Peak hour" value={viewMetrics.peakHour ? "Active" : "Idle"} note="6 PM to 10 PM window" />
-            </div>
-          </article>
-
-          <article className="panel comparison-panel">
-            <div className="panel-head">
-              <div>
-                <span className="section-tag">Appliance comparison</span>
-                <h3>Highest watt devices</h3>
-                <p>Use this ranking to find which devices and floors contribute most to overall consumption.</p>
-              </div>
-            </div>
-
-            <div className="comparison-list">
-              {deviceComparison.map((device) => (
-                <div key={device.label} className="comparison-row">
-                  <div>
-                    <strong>{device.label}</strong>
-                    <span>{device.on ? "Currently ON" : "Currently OFF"}</span>
-                  </div>
-                  <span className="comparison-watts">{device.watts}W</span>
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Analytics"
+            title="Billing and device comparison"
+            copy="Projected cost and highest-load devices are paired together for faster decision-making."
+          />
+          <section className="content-grid two-up">
+            <article className="panel bill-panel">
+              <div className="panel-head">
+                <div>
+                  <span className="section-tag">Bill estimate</span>
+                  <h3>{formatCurrency(viewMetrics.billEstimate)}</h3>
+                  <p>Projected bill based on the current monthly usage pattern.</p>
                 </div>
-              ))}
-            </div>
-          </article>
+              </div>
+
+              <div className="bill-insights">
+                <MetricCard label="Month usage" value={`${formatNumber(viewMetrics.monthlyUsage, 1)} kWh`} note="Simulated projection" />
+                <MetricCard label="Peak hour" value={viewMetrics.peakHour ? "Active" : "Idle"} note="6 PM to 10 PM window" />
+              </div>
+            </article>
+
+            <article className="panel comparison-panel">
+              <div className="panel-head">
+                <div>
+                  <span className="section-tag">Appliance comparison</span>
+                  <h3>Highest watt devices</h3>
+                  <p>Use this ranking to find which devices and floors contribute most to overall consumption.</p>
+                </div>
+              </div>
+
+              <div className="comparison-list">
+                {deviceComparison.map((device) => (
+                  <div key={device.label} className="comparison-row">
+                    <div>
+                      <strong>{device.label}</strong>
+                      <span>{device.on ? "Currently ON" : "Currently OFF"}</span>
+                    </div>
+                    <span className="comparison-watts">{device.watts}W</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
         </section>
 
-        <section className="floor-usage-grid">
-          {floorStats.map((floor) => (
-            <MetricCard
-              key={floor.id}
-              label={`${floor.name} live load`}
-              value={`${formatNumber(floor.activeLoadKw, 2)} kW`}
-              note={`${floor.activeCount} devices ON | ${floor.overloadedCount} warnings`}
-              tone={floor.overloadedCount ? "danger" : floor.id === activeFloorId ? "success" : "default"}
-            />
-          ))}
+        <section className="dashboard-section">
+          <SectionHeader
+            eyebrow="Floor Summary"
+            title="Per-floor usage cards"
+            copy="Compare live load, active devices, and warnings across every saved floor in one sweep."
+          />
+          <section className="floor-usage-grid">
+            {floorStats.map((floor) => (
+              <MetricCard
+                key={floor.id}
+                label={`${floor.name} live load`}
+                value={`${formatNumber(floor.activeLoadKw, 2)} kW`}
+                note={`${floor.activeCount} devices ON | ${floor.overloadedCount} warnings`}
+                tone={floor.overloadedCount ? "danger" : floor.id === activeFloorId ? "success" : "default"}
+              />
+            ))}
+          </section>
         </section>
       </div>
     );
@@ -1128,3 +1269,7 @@ export default function DashboardPage({ session, onLogout, onSettingsChange }) {
     </div>
   );
 }
+
+
+
+

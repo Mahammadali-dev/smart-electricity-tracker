@@ -1,8 +1,8 @@
 const tabs = [
-  { id: "home", label: "Dashboard" },
-  { id: "devices", label: "Devices" },
-  { id: "analytics", label: "Analytics" },
-  { id: "settings", label: "Settings" },
+  { id: "home", label: "Dashboard", shortLabel: "Home", badge: "DB", detail: "Energy summary and floor map" },
+  { id: "devices", label: "Devices", shortLabel: "Devices", badge: "DV", detail: "Room controls and live states" },
+  { id: "analytics", label: "Analytics", shortLabel: "Graphs", badge: "AN", detail: "Demand trends and cost insight" },
+  { id: "settings", label: "Settings", shortLabel: "Settings", badge: "ST", detail: "Limits, alerts, and profile" },
 ];
 
 export default function Navigation({ activeTab, onChange, onLogout, userName }) {
@@ -24,7 +24,11 @@ export default function Navigation({ activeTab, onChange, onLogout, userName }) 
               className={`nav-button ${activeTab === tab.id ? "active" : ""}`}
               onClick={() => onChange(tab.id)}
             >
-              <span>{tab.label}</span>
+              <span className="nav-button-badge" aria-hidden="true">{tab.badge}</span>
+              <span className="nav-button-copy">
+                <strong>{tab.label}</strong>
+                <small>{tab.detail}</small>
+              </span>
             </button>
           ))}
         </div>
@@ -48,7 +52,8 @@ export default function Navigation({ activeTab, onChange, onLogout, userName }) 
             className={`mobile-nav-button ${activeTab === tab.id ? "active" : ""}`}
             onClick={() => onChange(tab.id)}
           >
-            <span>{tab.label}</span>
+            <span className="mobile-nav-badge" aria-hidden="true">{tab.badge}</span>
+            <span className="mobile-nav-copy">{tab.shortLabel}</span>
           </button>
         ))}
       </nav>

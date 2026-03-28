@@ -64,6 +64,27 @@ function pxRectToStyle(candidate) {
   };
 }
 
+function getMaxFloorCount(placeType) {
+  switch (normalizePlaceType(placeType)) {
+    case "school":
+      return 4;
+    case "industry":
+      return 3;
+    case "office":
+      return 3;
+    case "home":
+    default:
+      return 3;
+  }
+}
+
+function buildFloorRecord(index, placeType) {
+  return {
+    id: `floor-${index}`,
+    name: normalizePlaceType(placeType) === "industry" ? `Section ${index}` : `Floor ${index}`,
+  };
+}
+
 export default function SetupPage({ session, onLogout, onSetupComplete, onSettingsChange }) {
   const navigate = useNavigate();
   const placeType = normalizePlaceType(session?.user?.placeType || session?.settings?.placeType);
@@ -112,6 +133,8 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
   const floorStats = useMemo(() => calculateFloorStats(floors, rooms, devices, placeType), [floors, rooms, devices, placeType]);
   const activeFloor = useMemo(() => getFloorById(floors, activeFloorId) || floorStats[0] || null, [floors, activeFloorId, floorStats]);
   const activeFloorData = useMemo(() => floorStats.find((floor) => floor.id === activeFloorId) || floorStats[0] || null, [floorStats, activeFloorId]);
+  const maxFloorCount = useMemo(() => getMaxFloorCount(placeType), [placeType]);
+  const canAddFloor = floors.length < maxFloorCount;
   const selectedRoom = useMemo(() => getRoomById(roomStats, selectedRoomId), [roomStats, selectedRoomId]);
 
   useEffect(() => { roomsRef.current = activeRooms; }, [activeRooms]);
@@ -475,6 +498,25 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     setMessage("");
   }
 
+  function handleAddFloor() {
+    if (!canAddFloor) {
+      setMessage("You already added the maximum number of floors for this place type.");
+      return;
+    }
+
+    const highestFloor = floors.reduce((max, floor) => {
+      const value = Number(String(floor.id).replace(/[^0-9]/g, "")) || 0;
+      return Math.max(max, value);
+    }, 0);
+    const nextFloor = buildFloorRecord(highestFloor + 1, placeType);
+    const nextFloors = normalizeFloors([...floors, nextFloor], rooms, devices, placeType);
+
+    setFloors(nextFloors);
+    setActiveFloorId(nextFloor.id);
+    setSelectedRoomId(null);
+    setMessage(`${nextFloor.name} added to the smart house map.`);
+  }
+
   function handleAddDevice(roomId, type) {
     const room = activeRooms.find((item) => item.id === roomId);
     if (!room) return setMessage(`Please select a room on ${activeFloor?.name || "this floor"} first`);
@@ -667,19 +709,40 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
           })}
         </div>
 
-        <div className="floor-selector-row">
-          {floorStats.map((floor) => (
-            <button
-              key={floor.id}
-              type="button"
-              className={`floor-tab-chip ${activeFloorId === floor.id ? "active" : ""}`}
-              onClick={() => handleFloorChange(floor.id)}
-            >
-              <strong>{floor.name}</strong>
-              <span>{floor.roomCount} rooms | {floor.deviceCount} devices</span>
-              <small>{floor.activeWatts}W live | {floor.estimatedDailyKwh.toFixed(1)} kWh/day</small>
-            </button>
-          ))}
+        <div className="floor-switcher-shell">
+          <div className="floor-tab-bar floor-tab-bar-desktop">
+            {floorStats.map((floor) => (
+              <button
+                key={floor.id}
+                type="button"
+                className={`floor-tab-chip ${activeFloorId === floor.id ? "active" : ""}`}
+                onClick={() => handleFloorChange(floor.id)}
+              >
+                <strong>{floor.name}</strong>
+                <span>{floor.roomCount} rooms | {floor.deviceCount} devices</span>
+                <small>{floor.activeWatts}W live | {floor.estimatedDailyKwh.toFixed(1)} kWh/day</small>
+              </button>
+            ))}
+            {canAddFloor ? (
+              <button type="button" className="floor-tab-chip floor-tab-chip-add" onClick={handleAddFloor}>
+                <strong>+ Add</strong>
+                <span>Create another level</span>
+                <small>Blank floor ready for rooms</small>
+              </button>
+            ) : null}
+          </div>
+
+          <div className="floor-mobile-selector">
+            <label className="floor-select-field">
+              <span>Active floor</span>
+              <select value={activeFloorId} onChange={(event) => handleFloorChange(event.target.value)}>
+                {floorStats.map((floor) => (
+                  <option key={floor.id} value={floor.id}>{floor.name}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="ghost-button floor-action-button" onClick={canAddFloor ? handleAddFloor : () => setMessage("You already reached the floor limit for this place type.")}>{canAddFloor ? "+ Add" : "Max floors"}</button>
+          </div>
         </div>
 
         <div className="setup-body">
@@ -953,3 +1016,9 @@ export default function SetupPage({ session, onLogout, onSetupComplete, onSettin
     </div>
   );
 }
+
+
+
+
+
+
