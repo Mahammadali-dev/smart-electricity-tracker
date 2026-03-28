@@ -127,7 +127,7 @@ const ChartPanel = memo(function ChartPanel({ title, subtitle, data, accent = "a
                 </linearGradient>
                 <linearGradient id={`${chartIdBase}-line`} x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor={accent === "smoke" ? "#6EE7A8" : "#00C853"} />
-                  <stop offset="100%" stopColor="#E0E0E0" />
+                  <stop offset="100%" stopColor="#5BE38F" />
                 </linearGradient>
                 <filter id={`${chartIdBase}-glow`} x="-40%" y="-40%" width="180%" height="180%">
                   <feGaussianBlur stdDeviation="6" result="blur" />
@@ -216,5 +216,6 @@ const ChartPanel = memo(function ChartPanel({ title, subtitle, data, accent = "a
 });
 
 export default ChartPanel;
+
 
 

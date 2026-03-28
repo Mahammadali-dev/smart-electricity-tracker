@@ -866,3 +866,134 @@
 }
 
 
+
+/* Eco-modern floor-plan refinements */
+.step-chip,
+.room-type-button,
+.room-pill,
+.device-palette button,
+.grid-preset-button,
+.room-line-item,
+.setup-device-row,
+.setup-inline-card,
+.builder-note,
+.floor-tab-chip,
+.floor-room,
+.floor-room-title,
+.map-device,
+.blueprint-shell,
+.blueprint-grid-meta,
+.setup-dimension-badge {
+  border-radius: 14px;
+}
+
+.step-chip.active,
+.step-chip.done,
+.room-type-button.active,
+.room-pill.active,
+.grid-preset-button.active,
+.room-line-item.selected,
+.setup-inline-card.selected,
+.floor-tab-chip.active,
+.floor-room.selected,
+.map-device.on {
+  box-shadow: 0 0 0 1px rgba(0, 200, 83, 0.18);
+  border-color: rgba(0, 200, 83, 0.28);
+  background: linear-gradient(180deg, rgba(0, 200, 83, 0.05), rgba(0, 200, 83, 0.02)), rgba(30, 30, 30, 0.98);
+}
+
+.blueprint-shell {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.004)), rgba(30, 30, 30, 0.98);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+}
+
+.blueprint-board::before {
+  background-image:
+    linear-gradient(to right, rgba(80, 80, 80, 0.22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(80, 80, 80, 0.22) 1px, transparent 1px);
+}
+
+.blueprint-board::after {
+  border-color: rgba(64, 64, 64, 0.7);
+}
+
+.floor-room {
+  background: linear-gradient(180deg, rgba(24, 24, 24, 0.98), rgba(30, 30, 30, 0.94));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.floor-room:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.floor-room.selected {
+  box-shadow: 0 0 0 1px rgba(0, 200, 83, 0.18), 0 10px 22px rgba(0, 0, 0, 0.2);
+}
+
+.floor-room-title {
+  background: rgba(18, 18, 18, 0.9);
+  border: 1px solid rgba(64, 64, 64, 0.92);
+}
+
+.map-device {
+  background: rgba(30, 30, 30, 0.98);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.map-device:hover {
+  transform: translate3d(-50%, -50%, 0) scale(1.02);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.map-device:active {
+  transform: translate3d(-50%, -50%, 0) scale(1.08);
+}
+
+.map-device.on {
+  box-shadow: 0 0 0 1px rgba(0, 200, 83, 0.18), 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.map-device.high,
+.floor-tab-chip.active,
+.floor-tab-chip:hover {
+  box-shadow: 0 0 0 1px rgba(0, 200, 83, 0.16), 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.map-device-aura {
+  background: radial-gradient(circle, rgba(0, 200, 83, 0.1), rgba(0, 200, 83, 0.02) 60%, transparent 78%);
+}
+
+.map-device.on .map-device-aura {
+  opacity: 0.5;
+}
+
+.device-energy-flow {
+  opacity: 0.68;
+}
+
+.device-energy-flow span {
+  width: 3px;
+  box-shadow: 0 0 6px rgba(0, 200, 83, 0.12);
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 200, 83, 0.08) 22%, rgba(0, 200, 83, 0.58) 52%, transparent 100%);
+}
+
+.map-device.on .map-device-icon {
+  filter: none;
+}
+
+.floor-room,
+.map-device,
+.floor-tab-chip,
+.blueprint-shell,
+.floor-room-title,
+.map-device-aura,
+.device-energy-flow span {
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease, opacity 0.3s ease;
+}
+
+@media (max-width: 760px) {
+  .map-device:active {
+    transform: translate3d(-50%, -50%, 0) scale(1.1);
+  }
+}
