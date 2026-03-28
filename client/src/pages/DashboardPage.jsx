@@ -622,6 +622,30 @@ export default function DashboardPage({ session, onLogout, onSettingsChange, onU
     markDirty("Device changes pending save");
   }, [activeRooms, appliances, markDirty, placeType, rooms]);
 
+  const handleProfileSave = useCallback(async (event) => {
+    event.preventDefault();
+    const trimmedName = profileName.trim();
+
+    if (trimmedName.length < 2) {
+      setProfileFeedback({ tone: "error", message: "Username must be at least 2 characters long." });
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileFeedback({ tone: "", message: "" });
+
+    try {
+      const result = await api.updateUserProfile(session.token, { name: trimmedName });
+      onUserUpdate?.(result.user, result.token);
+      setProfileName(result.user?.name || trimmedName);
+      setProfileFeedback({ tone: "info", message: "Profile updated successfully." });
+    } catch (profileError) {
+      setProfileFeedback({ tone: "error", message: profileError.message || "Unable to update profile right now." });
+    } finally {
+      setProfileSaving(false);
+    }
+  }, [onUserUpdate, profileName, session.token]);
+
   function renderFloorSelectorPanel() {
     const renderActionButton = () => (
       canAddFloor ? (
