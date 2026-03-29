@@ -1865,7 +1865,7 @@ function renderSetupSidebar() {
         </div>
         <div class="device-palette">
           ${DEVICE_LIBRARY.map((device) => `
-            <button type="button" draggable="true" data-device-template="${escapeHtml(device.type)}">
+            <button type="button" data-device-template="${escapeHtml(device.type)}">
               <span class="map-device-icon">${iconSvg(device.type)}</span>
               <strong>${escapeHtml(device.name)}</strong>
               <span>${escapeHtml(String(device.watts))}W default</span>
@@ -1974,17 +1974,6 @@ function attachSetupHandlers() {
 
   document.querySelectorAll('[data-device-template]').forEach((button) => {
     button.addEventListener('click', () => addDeviceToSelectedRoom(button.dataset.deviceTemplate));
-    button.addEventListener('dragstart', (event) => {
-      state.setupDraggedDeviceType = button.dataset.deviceTemplate;
-      event.dataTransfer.setData('text/plain', button.dataset.deviceTemplate);
-    });
-  });
-
-  document.querySelectorAll('[data-room-drop="true"]').forEach((roomEl) => {
-    roomEl.addEventListener('dragover', (event) => {
-      event.preventDefault();
-    });
-    roomEl.addEventListener('drop', handleRoomDrop);
   });
 
   document.querySelectorAll('[data-device-watts]').forEach((input) => {
@@ -2788,7 +2777,9 @@ function registerStaticHandlers() {
 
   $('login-form').addEventListener('submit', handleLogin);
   $('signup-form').addEventListener('submit', handleSignup);
-  $('logout-button').addEventListener('click', handleLogout);
+  document.querySelectorAll('[data-app-action="logout"]').forEach((button) => {
+    button.addEventListener('click', handleLogout);
+  });
   $('theme-toggle').addEventListener('click', () => {
     state.darkMode = !state.darkMode;
     render();
@@ -3798,7 +3789,7 @@ function renderSetupSidebar() {
         </div>
         <div class="device-palette">
           ${DEVICE_LIBRARY.map((device) => `
-            <button type="button" draggable="true" data-device-template="${escapeHtml(device.type)}">
+            <button type="button" data-device-template="${escapeHtml(device.type)}">
               <span class="map-device-icon">${iconSvg(device.type)}</span>
               <strong>${escapeHtml(device.name)}</strong>
               <span>${escapeHtml(String(device.watts))}W default</span>
@@ -3919,17 +3910,6 @@ function attachSetupHandlers() {
 
   document.querySelectorAll('[data-device-template]').forEach((button) => {
     button.addEventListener('click', () => addDeviceToSelectedRoom(button.dataset.deviceTemplate));
-    button.addEventListener('dragstart', (event) => {
-      state.setupDraggedDeviceType = button.dataset.deviceTemplate;
-      event.dataTransfer.setData('text/plain', button.dataset.deviceTemplate);
-    });
-  });
-
-  document.querySelectorAll('[data-room-drop="true"]').forEach((roomEl) => {
-    roomEl.addEventListener('dragover', (event) => {
-      event.preventDefault();
-    });
-    roomEl.addEventListener('drop', handleRoomDrop);
   });
 
   document.querySelectorAll('[data-device-watts]').forEach((input) => {
