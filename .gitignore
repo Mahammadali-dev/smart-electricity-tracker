@@ -20,3 +20,6 @@ server-*.log
 
 # OS files
 .DS_Store
+
+# Local data
+data/store.json
