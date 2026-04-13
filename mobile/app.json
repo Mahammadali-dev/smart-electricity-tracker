@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Smart Electricity Tracker",
+    "slug": "smart-electricity-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#121212"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#121212"
+      }
+    },
+    "extra": {
+      "apiUrl": "https://smart-electricity-tracker.onrender.com"
+    }
+  }
+}

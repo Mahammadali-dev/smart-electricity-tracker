@@ -3,11 +3,13 @@
   "private": true,
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "mobile"
   ],
   "scripts": {
     "dev:client": "npm --prefix client run dev",
     "dev:server": "npm --prefix server run dev",
+    "dev:mobile": "npm --prefix mobile run start",
     "build": "npm --prefix client run build",
     "start": "npm --prefix server run start"
   }
